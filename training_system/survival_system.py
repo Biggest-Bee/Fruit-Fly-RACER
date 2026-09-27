@@ -132,6 +132,24 @@ class SurvivalSystem:
         else:
             self.exploration_drive = 0.1
     
+    def set_hunger_enabled(self, enabled: bool):
+        """
+        Turn the hunger drive on or off
+        
+        Args:
+            enabled: When False the fly stops getting hungry and keeps its energy
+        """
+        self.hunger_mechanics.set_enabled(enabled)
+        if not enabled:
+            self.fear_drive = 0.0
+            self.exploration_drive = 0.7
+            self.is_alive = True
+            self.death_time = None
+    
+    def is_hunger_enabled(self) -> bool:
+        """Check whether hunger is currently enabled"""
+        return self.hunger_mechanics.enabled
+    
     def process_feeding(self, energy_gain: float):
         """
         Process a feeding event

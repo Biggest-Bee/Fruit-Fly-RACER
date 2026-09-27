@@ -28,6 +28,7 @@ class HungerMechanics:
         self.max_energy = max_energy
         self.energy = initial_energy
         self.hunger_level = 0.0  # 0 = not hungry, 100 = starving
+        self.enabled = True  # When False the fly never gets hungry
         
         # Hunger parameters
         self.base_hunger_rate = 0.5  # Energy loss per second at rest
@@ -59,6 +60,15 @@ class HungerMechanics:
             dt: Time step in seconds
             activity_level: Current activity level (0-1)
         """
+        if not self.enabled:
+            self.hunger_level = 0.0
+            self.hunger_drive = 0.0
+            self.survival_drive = 0.0
+            self.is_starving = False
+            self.is_critical = False
+            self.death_imminent = False
+            return
+        
         # Calculate energy loss
         energy_loss = self.base_hunger_rate * dt * (1 + activity_level * self.activity_multiplier)
         
@@ -126,9 +136,30 @@ class HungerMechanics:
         self._update_survival_drives()
         self._check_starvation_states()
     
+    def set_enabled(self, enabled: bool):
+        """
+        Turn hunger on or off
+        
+        Args:
+            enabled: When False, energy stops draining and all hunger drives are cleared
+        """
+        self.enabled = enabled
+        if not enabled:
+            self.hunger_level = 0.0
+            self.hunger_drive = 0.0
+            self.survival_drive = 0.0
+            self.is_starving = False
+            self.is_critical = False
+            self.death_imminent = False
+        else:
+            self.hunger_level = 100.0 - (self.energy / self.max_energy * 100.0)
+            self._update_survival_drives()
+            self._check_starvation_states()
+    
     def get_hunger_state(self) -> dict:
         """Get current hunger state information"""
         return {
+            "enabled": self.enabled,
             "energy": self.energy,
             "max_energy": self.max_energy,
             "hunger_level": self.hunger_level,
@@ -148,7 +179,9 @@ class HungerMechanics:
         Returns:
             Urgency level: 0 = no urgency, 1 = critical urgency
         """
-        if self.death_imminent:
+        if not self.enabled:
+            return 0.0
+        elif self.death_imminent:
             return 1.0
         elif self.is_critical:
             return 0.9
@@ -168,6 +201,8 @@ class HungerMechanics:
         Returns:
             True if food seeking is necessary
         """
+        if not self.enabled:
+            return False
         return self.hunger_drive > 0.3 or self.is_starving
     
     def reset(self, initial_energy: float = 100.0):

@@ -11,6 +11,14 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import pickle
 import hashlib
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from .memory_integrity import MemoryIntegrity, TruthVerifier
+except ImportError:
+    from memory_integrity import MemoryIntegrity, TruthVerifier
 
 class OnTheJobLearningSystem:
     """
@@ -35,6 +43,12 @@ class OnTheJobLearningSystem:
         self.max_short_term_size = 1000  # Max items in short-term memory
         self.max_long_term_size = 10000  # Max items in long-term memory
         self.memory_retention_time = 7 * 24 * 3600  # 7 days in seconds
+        
+        # Memory integrity: older memories are protected from conflicting claims,
+        # and user statements are verified before they are believed.
+        self.integrity = MemoryIntegrity()
+        self.truth_verifier = TruthVerifier(self.integrity)
+        self.conflict_log: List[Dict] = []
         
         # Create memory directory
         os.makedirs(memory_dir, exist_ok=True)
@@ -119,29 +133,138 @@ class OnTheJobLearningSystem:
             return item["value"]
         return None
     
-    def store_long_term(self, key: str, value: Any, category: str = "knowledge", importance: float = 0.5):
+    def store_long_term(self, key: str, value: Any, category: str = "knowledge",
+                        importance: float = 0.5, source: str = "observation",
+                        evidence: Optional[str] = None) -> Dict:
         """
-        Store information in long-term memory
+        Store information in long-term memory without losing what came before
+        
+        A value that conflicts with an established memory does not overwrite it.
+        The older memory is kept and the new claim is recorded as disputed until
+        it is backed by evidence or repeated corroboration.
         
         Args:
             key: Memory key
             value: Value to store
             category: Memory category
             importance: Importance score (0-1) for retention
+            source: Where the information came from (observation, system, user, ...)
+            evidence: Optional description of the evidence behind the value
+            
+        Returns:
+            Outcome dict describing what happened to the memory
         """
         if category not in self.long_term_memory:
             self.long_term_memory[category] = {}
         
-        self.long_term_memory[category][key] = {
-            "value": value,
-            "timestamp": time.time(),
-            "importance": importance,
-            "access_count": 0,
-            "last_accessed": time.time()
-        }
+        existing = self.long_term_memory[category].get(key)
+        if existing is None:
+            record = self.integrity.new_record(value, source=source, importance=importance)
+            if evidence:
+                record["evidence"] = evidence
+            outcome = {
+                "action": "stored",
+                "accepted": True,
+                "kept_value": value,
+                "reason": "nothing was remembered under this key yet",
+            }
+        else:
+            record, outcome = self.integrity.resolve(
+                existing, value, source=source, importance=importance,
+                evidence=evidence
+            )
+        
+        self.long_term_memory[category][key] = record
+        
+        if outcome["action"] in ("kept_older", "replaced"):
+            self.conflict_log.append({
+                "category": category,
+                "key": key,
+                "timestamp": time.time(),
+                **outcome,
+            })
         
         # Save to file
         self._save_long_term_memory()
+        return outcome
+    
+    def learn_from_user_statement(self, statement: str, key: str, value: Any,
+                                  category: str = "knowledge",
+                                  importance: float = 0.5) -> Dict:
+        """
+        Take in something the user said, after checking whether it is true
+        
+        The statement is verified against the fly's own observations and its
+        existing memories first. A contradicted statement is never stored as
+        fact, which is what stops the fly from being talked out of what it knows.
+        
+        Args:
+            statement: What the user said
+            key: Memory key the statement is about
+            value: The value the statement asserts
+            category: Memory category
+            importance: Importance score (0-1)
+            
+        Returns:
+            Dict with the verification verdict, what was done, and a reply
+        """
+        known = self.long_term_memory.get(category, {}).get(key)
+        verdict = self.truth_verifier.verify(
+            statement, key=key, value=value, known_memory=known, source="user"
+        )
+        
+        if verdict["believe"]:
+            outcome = self.store_long_term(
+                key, value, category=category, importance=importance,
+                source="user", evidence=statement if not verdict["pressure_detected"] else None
+            )
+        else:
+            # Still record the disagreement so repeated, evidenced claims can
+            # eventually win, but do not change what the fly believes now.
+            if known is not None:
+                record, outcome = self.integrity.resolve(
+                    known, value, source="user", importance=importance,
+                    confidence=verdict["confidence"],
+                    evidence=None,
+                )
+                self.long_term_memory[category][key] = record
+                self._save_long_term_memory()
+            else:
+                outcome = {
+                    "action": "rejected",
+                    "accepted": False,
+                    "reason": "statement could not be verified",
+                }
+            self.conflict_log.append({
+                "category": category,
+                "key": key,
+                "timestamp": time.time(),
+                **outcome,
+            })
+        
+        return {
+            "verdict": verdict,
+            "outcome": outcome,
+            "reply": self.truth_verifier.explain(verdict),
+        }
+    
+    def record_observation(self, key: str, value: Any, category: str = "knowledge",
+                           importance: float = 0.8) -> Dict:
+        """
+        Record something the fly established first hand
+        
+        First-hand observations are the strongest evidence the fly has, so they
+        take precedence over anything it has merely been told.
+        """
+        self.truth_verifier.record_observation(key, value)
+        return self.store_long_term(key, value, category=category,
+                                    importance=importance, source="observation")
+    
+    def get_conflicts(self, category: Optional[str] = None) -> List[Dict]:
+        """Get the memory conflicts the fly has run into"""
+        if category is None:
+            return list(self.conflict_log)
+        return [c for c in self.conflict_log if c["category"] == category]
     
     def retrieve_long_term(self, key: str, category: str = "knowledge") -> Optional[Any]:
         """

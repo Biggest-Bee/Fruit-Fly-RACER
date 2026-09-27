@@ -1,265 +1,182 @@
 """
-3D Environment with Real 3D Fly Model
-Using Ursina Engine for real 3D simulation
+3D Environment with a brain-driven fly
+
+The fly is not scripted: its wings are driven by the spiking network in
+brain_controller.py, which reads the fly's senses and produces thrust, yaw and
+pitch commands. The enclosure is a closed box with a food source in each of its
+four bottom corners, and hunger can be switched on and off at runtime.
+
+Simulation coordinates are Z-up (x, y, z); Ursina is Y-up, so a simulation
+position (x, y, z) is drawn at (x, z, y).
 """
 
-try:
-    from ursina import *
-    from ursina.prefabs.first_person_controller import FirstPersonController
-    import sys
-    import os
-    import math
-    
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    
-    print("Starting 3D Fruit Fly Environment...")
-    
-    # Initialize Ursina
+import math
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from brain_controller import BrainFlyController
+
+ROOM_SIZE = 20.0  # Width and depth of the enclosure
+ROOM_HEIGHT = 12.0  # Height of the enclosure
+FOOD_INSET = 2.0  # How far the corner food sits from the walls
+FOOD_CAPACITY = 100.0
+FOOD_REGROWTH = 2.0  # Units of food per second
+
+
+def corner_food_sources():
+    """A food source in each of the four bottom corners of the box."""
+    edge = ROOM_SIZE / 2.0 - FOOD_INSET
+    return [
+        {"position": (-edge, -edge, 0.8), "amount": FOOD_CAPACITY},
+        {"position": (edge, -edge, 0.8), "amount": FOOD_CAPACITY},
+        {"position": (-edge, edge, 0.8), "amount": FOOD_CAPACITY},
+        {"position": (edge, edge, 0.8), "amount": FOOD_CAPACITY},
+    ]
+
+
+def run():
+    """Open the Ursina window and run the simulation."""
+    from ursina import (
+        Entity, Text, Ursina, Vec3, application, camera, color, held_keys,
+        mouse, time, window,
+    )
+
     app = Ursina()
-    
-    # Set up the window
     window.title = "Fruit Fly AI - 3D Environment"
     window.borderless = False
     window.fullscreen = False
     window.exit_button.visible = False
-    
-    # Create the enclosure box (large room)
-    room_size = 20
-    wall_thickness = 1
-    
-    # Floor
-    floor = Entity(
-        model='plane',
-        scale=(room_size, 1, room_size),
-        color=color.gray,
-        texture='white_cube',
-        collider='box',
-        position=(0, 0, 0)
-    )
-    
-    # Ceiling
-    ceiling = Entity(
-        model='plane',
-        scale=(room_size, 1, room_size),
-        color=color.light_gray,
-        texture='white_cube',
-        collider='box',
-        position=(0, room_size/2, 0),
-        rotation=(180, 0, 0)
-    )
-    
-    # Walls
-    wall_positions = [
-        (0, room_size/4, -room_size/2),  # Back wall
-        (0, room_size/4, room_size/2),   # Front wall
-        (-room_size/2, room_size/4, 0),  # Left wall
-        (room_size/2, room_size/4, 0),   # Right wall
+    window.color = color.rgb(12, 12, 18)
+
+    controller = BrainFlyController(bounds=(ROOM_SIZE, ROOM_SIZE, ROOM_HEIGHT))
+    food_sources = corner_food_sources()
+
+    # ---------------------------------------------------------------- enclosure
+    Entity(model='plane', scale=(ROOM_SIZE, 1, ROOM_SIZE),
+           color=color.rgb(70, 70, 80), texture='white_cube', position=(0, 0, 0))
+    Entity(model='plane', scale=(ROOM_SIZE, 1, ROOM_SIZE),
+           color=color.rgb(55, 55, 65), texture='white_cube',
+           position=(0, ROOM_HEIGHT, 0), rotation=(180, 0, 0))
+
+    half = ROOM_SIZE / 2.0
+    wall_specs = [
+        ((0, ROOM_HEIGHT / 2, -half), (0, 0, 0)),
+        ((0, ROOM_HEIGHT / 2, half), (0, 180, 0)),
+        ((-half, ROOM_HEIGHT / 2, 0), (0, 90, 0)),
+        ((half, ROOM_HEIGHT / 2, 0), (0, -90, 0)),
     ]
-    
-    wall_rotations = [
-        (0, 0, 0),     # Back wall
-        (0, 180, 0),    # Front wall
-        (0, 90, 0),     # Left wall
-        (0, -90, 0),    # Right wall
-    ]
-    
-    walls = []
-    for pos, rot in zip(wall_positions, wall_rotations):
-        wall = Entity(
-            model='cube',
-            scale=(room_size, room_size/2, wall_thickness),
-            color=color.azure,
-            texture='white_cube',
-            collider='box',
-            position=pos,
-            rotation=rot
-        )
-        walls.append(wall)
-    
-    # Food locations (red spheres in corners)
-    food_positions = [
-        (-room_size/2 + 2, 1, -room_size/2 + 2),
-        (room_size/2 - 2, 1, -room_size/2 + 2),
-        (-room_size/2 + 2, 1, room_size/2 - 2),
-        (room_size/2 - 2, 1, room_size/2 - 2),
-    ]
-    
-    food_items = []
-    for pos in food_positions:
-        food = Entity(
-            model='sphere',
-            scale=1,
-            color=color.red,
-            position=pos,
-            collider='sphere'
-        )
-        food_items.append(food)
-    
-    # Create 3D fly model (using basic shapes for now)
-    # Body
-    fly_body = Entity(
-        model='sphere',
-        scale=(0.5, 0.3, 0.8),
-        color=color.brown,
-        position=(0, 1, 0),
-        collider='box'
-    )
-    
-    # Head
-    fly_head = Entity(
-        model='sphere',
-        scale=0.25,
-        color=color.dark_gray,
-        position=(0, 1.1, 0.4),
-        parent=fly_body
-    )
-    
-    # Wings (simple planes)
-    left_wing = Entity(
-        model='plane',
-        scale=(0.8, 0.4),
-        color=color.cyan,
-        position=(-0.4, 0.1, 0),
-        parent=fly_body,
-        rotation=(0, 0, 30)
-    )
-    
-    right_wing = Entity(
-        model='plane',
-        scale=(0.8, 0.4),
-        color=color.cyan,
-        position=(0.4, 0.1, 0),
-        parent=fly_body,
-        rotation=(0, 0, -30)
-    )
-    
-    # Eyes
-    left_eye = Entity(
-        model='sphere',
-        scale=0.08,
-        color=color.black,
-        position=(-0.1, 0.1, 0.1),
-        parent=fly_head
-    )
-    
-    right_eye = Entity(
-        model='sphere',
-        scale=0.08,
-        color=color.black,
-        position=(0.1, 0.1, 0.1),
-        parent=fly_head
-    )
-    
-    # Fly movement variables
-    fly_speed = 2
-    fly_direction = Vec3(1, 0, 0)
-    target_food = None
-    is_eating = False
-    
-    # Player controller (to move around the environment)
-    player = FirstPersonController()
-    player.position = (0, 2, -room_size/2 + 3)
-    player.cursor.visible = True
-    
-    # UI Text
-    info_text = Text(
-        text='WASD to move | Mouse to look | Fly AI will move autonomously',
-        position=(-0.85, 0.45),
-        scale=1,
-        color=color.white
-    )
-    
-    status_text = Text(
-        text='Fly Status: Searching for food...',
-        position=(-0.85, 0.40),
-        scale=1,
-        color=color.yellow
-    )
-    
+    for position, rotation in wall_specs:
+        Entity(model='plane', scale=(ROOM_SIZE, 1, ROOM_HEIGHT),
+               color=color.rgba(120, 170, 220, 60), texture='white_cube',
+               position=position, rotation=(90, rotation[1], 0), double_sided=True)
+
+    # -------------------------------------------------------------------- food
+    food_entities = []
+    for source in food_sources:
+        x, y, z = source["position"]
+        food_entities.append(Entity(model='sphere', scale=1.0, color=color.red,
+                                    position=(x, z, y)))
+
+    # --------------------------------------------------------------------- fly
+    fly = Entity(model='sphere', scale=(0.8, 0.35, 0.45), color=color.rgb(90, 60, 40))
+    Entity(model='sphere', scale=(0.35, 0.8, 0.8), color=color.dark_gray,
+           position=(0.55, 0.15, 0), parent=fly)
+    Entity(model='sphere', scale=(0.18, 0.4, 0.4), color=color.red,
+           position=(0.75, 0.2, 0.35), parent=fly)
+    Entity(model='sphere', scale=(0.18, 0.4, 0.4), color=color.red,
+           position=(0.75, 0.2, -0.35), parent=fly)
+    left_wing = Entity(model='cube', scale=(0.7, 0.05, 1.6),
+                       color=color.rgba(200, 230, 255, 140),
+                       position=(-0.1, 0.35, 0.9), parent=fly)
+    right_wing = Entity(model='cube', scale=(0.7, 0.05, 1.6),
+                        color=color.rgba(200, 230, 255, 140),
+                        position=(-0.1, 0.35, -0.9), parent=fly)
+
+    # ---------------------------------------------------------------- free cam
+    camera.position = (0, ROOM_HEIGHT * 0.6, -ROOM_SIZE)
+    camera.rotation = (10, 0, 0)
+    camera_angle = [0.0, 10.0]
+
+    hud = Text(text='', position=(-0.86, 0.46), scale=0.9, color=color.white)
+    Text(
+        text='[H] hunger on/off   [R] reset fly   [F] feed fly   '
+             '[WASD/QE] move camera   [right-drag] look   [ESC] quit',
+        position=(-0.86, -0.46), scale=0.8, color=color.light_gray)
+
     def update():
-        """Update function called every frame"""
-        global target_food, is_eating
-        
-        # Fly AI movement
-        if not is_eating:
-            # Simple AI: move towards nearest food
-            nearest_food = None
-            min_distance = float('inf')
-            
-            for food in food_items:
-                distance = distance_xz(fly_body.position, food.position)
-                if distance < min_distance:
-                    min_distance = distance
-                    nearest_food = food
-            
-            if nearest_food:
-                target_food = nearest_food
-                direction = (target_food.position - fly_body.position).normalized()
-                fly_body.position += direction * fly_speed * time.dt
-                
-                # Face the direction of movement
-                fly_body.look_at(target_food.position)
-                
-                # Wing flapping animation
-                import math
-                wing_flap = math.sin(time.time() * 20) * 30
-                left_wing.rotation_z = 30 + wing_flap
-                right_wing.rotation_z = -30 - wing_flap
-                
-                status_text.text = f'Fly Status: Moving to food (Distance: {min_distance:.2f})'
-                status_text.color = color.yellow
-                
-                # Check if reached food
-                if min_distance < 0.5:
-                    is_eating = True
-                    status_text.text = 'Fly Status: Eating...'
-                    status_text.color = color.green
-            else:
-                # Random movement if no food
-                fly_body.position += fly_direction * fly_speed * time.dt * 0.5
-                status_text.text = 'Fly Status: Searching...'
-                status_text.color = color.white
-        else:
-            # Eating behavior
-            eat_timer = 2  # Eat for 2 seconds
-            if eat_timer > 0:
-                eat_timer -= time.dt
-                status_text.text = f'Fly Status: Eating ({eat_timer:.1f}s remaining)'
-            else:
-                is_eating = False
-                # Remove eaten food
-                if target_food in food_items:
-                    food_items.remove(target_food)
-                    destroy(target_food)
-                    target_food = None
-                    status_text.text = 'Fly Status: Food consumed!'
-        
-        # Keep fly within bounds
-        fly_body.x = clamp(fly_body.x, -room_size/2 + 1, room_size/2 - 1)
-        fly_body.z = clamp(fly_body.z, -room_size/2 + 1, room_size/2 - 1)
-        fly_body.y = clamp(fly_body.y, 0.5, room_size/2 - 1)
-    
-    # Instructions
-    print("3D Environment Controls:")
-    print("WASD - Move around")
-    print("Mouse - Look around")
-    print("ESC - Exit")
-    print("The fly will autonomously search for and eat food")
-    
-    # Run the app
+        dt = min(time.dt, 0.05)
+
+        # Food slowly regrows so the fly always has something to find
+        for source in food_sources:
+            source["amount"] = min(FOOD_CAPACITY, source["amount"] + FOOD_REGROWTH * dt)
+
+        state = controller.update(dt, food_sources)
+
+        x, y, z = state["position"]
+        fly.position = Vec3(x, z, y)
+        fly.rotation = (
+            math.degrees(state["pitch"]),
+            -math.degrees(state["yaw"]),
+            math.degrees(state["roll"]),
+        )
+
+        flap = math.sin(state["wing_beat_phase"]) * 55.0
+        left_wing.rotation_x = flap
+        right_wing.rotation_x = -flap
+
+        for entity, source in zip(food_entities, food_sources):
+            fraction = source["amount"] / FOOD_CAPACITY
+            entity.scale = 0.35 + 1.1 * fraction
+            entity.color = color.red if fraction > 0.25 else color.rgb(120, 70, 70)
+
+        brain = state["brain"]
+        motor = state["motor"]
+        hud.text = (
+            f"behaviour: {state['behavior']}\n"
+            f"hunger: {'ON' if state['hunger_enabled'] else 'OFF'}   "
+            f"energy: {state['energy']:.0f}%   meals: {state['meals_eaten']}\n"
+            f"position: ({x:.1f}, {y:.1f}, {z:.1f})   speed: {state['speed']:.1f}\n"
+            f"neurons: {brain['neurons']} "
+            f"({brain['recurrent_connections']} recurrent connections)   "
+            f"spikes: {brain['total_spikes']}\n"
+            f"motor: thrust {motor['thrust']:.2f}  "
+            f"yaw {motor['yaw_left'] - motor['yaw_right']:+.2f}  "
+            f"pitch {motor['pitch_up'] - motor['pitch_down']:+.2f}"
+        )
+        hud.color = color.green if state["hunger_enabled"] else color.cyan
+
+        # Free-look camera
+        speed = 12.0 * dt
+        camera.position += camera.forward * (held_keys['w'] - held_keys['s']) * speed
+        camera.position += camera.right * (held_keys['d'] - held_keys['a']) * speed
+        camera.position += camera.up * (held_keys['e'] - held_keys['q']) * speed
+        if mouse.right:
+            camera_angle[0] += mouse.velocity[0] * 120.0
+            camera_angle[1] -= mouse.velocity[1] * 120.0
+            camera.rotation = (camera_angle[1], camera_angle[0], 0)
+
+    def input(key):
+        if key == 'h':
+            controller.toggle_hunger()
+        elif key == 'r':
+            controller.reset()
+        elif key == 'f':
+            controller.feed(30.0)
+        elif key == 'escape':
+            application.quit()
+
+    # Ursina calls the module level `update` and `input` functions each frame
+    globals()['update'] = update
+    globals()['input'] = input
     app.run()
-    
-except ImportError:
-    print("Ursina Engine not installed.")
-    print("Install with: pip install ursina")
-    print("This is required for real 3D environments.")
-    
-    # Fallback: Show instructions
-    print("\nTo get real 3D functionality:")
-    print("1. Install Ursina: pip install ursina")
-    print("2. Run this script again")
-    print("3. You'll be able to:")
-    print("   - Move around in 3D space")
-    print("   - Watch the fly move in 3D")
-    print("   - See the fly eat food in 3D")
-    print("   - Navigate the environment")
+
+
+if __name__ == "__main__":
+    try:
+        run()
+    except ImportError as error:
+        print(f"Ursina Engine not available ({error}).")
+        print("Install it with: pip install ursina")

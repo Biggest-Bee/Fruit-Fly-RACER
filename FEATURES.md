@@ -68,9 +68,20 @@ has a rule-based fallback so the app still works offline.
 - **`FoodSystem`** — food placement (including one per corner), consumption over time, food
   regeneration, per-location status, and a `check_feeding_allowed()` gate that ties eating to
   training performance.
-- **`real_3d_environment.py`** — a real-time 3D window rendered with the **Ursina** engine
-  (room with floor/ceiling/walls, fly model, live update loop), launched as a separate process
-  from the desktop app.
+- **`BrainFlyController`** (`brain_controller.py`) — the bridge between the brain and the body.
+  A spiking network of sensory neurons → interneurons → motor neurons drives the fly: the
+  interneurons are wired to each other (recurrent connections plus efference copies from the
+  motor neurons), and the motor spikes become thrust, yaw, pitch, roll and lift on the
+  `FlyCharacter`. Nothing scripts the movement — the fly goes where its neurons send it.
+  Hunger can be switched on and off at runtime (`toggle_hunger()`); with hunger off the fly
+  stops seeking food and simply explores the box.
+- **`real_3d_environment.py`** — a real-time 3D window rendered with the **Ursina** engine:
+  an enclosed box (floor, ceiling, four transparent walls), a food source in each of the four
+  corners that shrinks as it is eaten and slowly regrows, and a multi-part fly with beating
+  wings that flies in all three axes under brain control. A HUD shows behaviour, hunger state,
+  energy, meals, position, speed, neuron and recurrent-connection counts, spikes and live motor
+  outputs. Keys: `H` hunger on/off, `R` reset, `F` feed, `WASD/QE` + right-drag to move the
+  camera, `ESC` to quit.
 
 ---
 
@@ -129,7 +140,26 @@ overall progress, and can advance or reset levels.
 
 ---
 
-## 6. On-the-job learning (`learning_system/`)
+## 6. Memory integrity and truth verification (`learning_system/memory_integrity.py`)
+
+- **`MemoryIntegrity`** — new information never silently overwrites what the fly already knows.
+  Every memory carries its source, confidence, corroboration count, the claims that have
+  contradicted it, and the values it once held. A conflicting claim against an established
+  memory is filed as *disputed* and the older memory is kept, until the claim either outranks
+  it on evidence or is independently corroborated enough times. Anything the fly observes
+  first hand takes precedence over what it was merely told.
+- **`TruthVerifier`** — checks statements before the fly believes them, against its own
+  observations and its existing memories. Pressure and appeals to authority ("trust me",
+  "you already agreed", "your memory is broken") *lower* confidence instead of raising it, and
+  repetition on its own is never treated as evidence — so the fly cannot be gaslit into
+  discarding what it knows. Verdicts are `supported` / `contradicted` / `unverified`, each with
+  a confidence and the reasoning behind it.
+- Wired into `OnTheJobLearningSystem` via `learn_from_user_statement()`, `record_observation()`
+  and `get_conflicts()`.
+
+---
+
+## 7. On-the-job learning (`learning_system/`)
 
 `OnTheJobLearningSystem` is a fully local, file-based memory (no external database), stored under
 `fly_memory/` as JSON (`long_term_memory.json`, `interaction_history.json`):
@@ -144,7 +174,7 @@ overall progress, and can advance or reset levels.
 
 ---
 
-## 7. Desktop application
+## 8. Desktop application
 
 ### Main app (`desktop_app/main_app.py` — `FruitFlyDesktopApp`)
 A Tkinter workspace combining:
@@ -187,7 +217,7 @@ The most complete entry point (1400×900):
 
 ---
 
-## 8. Tests and diagnostics (repo root)
+## 9. Tests and diagnostics (repo root)
 
 Standalone scripts rather than a pytest suite — run them directly with `python <file>`:
 
@@ -199,7 +229,7 @@ Standalone scripts rather than a pytest suite — run them directly with `python
 
 ---
 
-## 9. Configuration and data
+## 10. Configuration and data
 
 - `env.example` → copy to `.env` and set `GEMINI_API_KEY`; `.env` is gitignored.
 - `data/body-annotations-male-cns-v1.0-minconf-0.5.feather` (~14 MB) — neuron annotations.
@@ -211,7 +241,7 @@ Standalone scripts rather than a pytest suite — run them directly with `python
 
 ---
 
-## 10. End-to-end data flow
+## 11. End-to-end data flow
 
 1. **User text** → `BrainTranslator` → concept activations → `LanguageCortex` → connectome
    activation → `BrainEngine.step()`.
@@ -225,7 +255,7 @@ Standalone scripts rather than a pytest suite — run them directly with `python
 
 ---
 
-## 11. Status
+## 12. Status
 
 Per `PROJECT_PLAN.md` the project is a 5-phase, ~24-month plan. Phases 1–4 (brain simulation,
 language interface, 3D environment, survival behaviours, coding training) have working

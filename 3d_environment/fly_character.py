@@ -67,6 +67,7 @@ class FlyCharacter:
         yaw_input = control_input.get("yaw", 0.0)
         pitch_input = control_input.get("pitch", 0.0)
         roll_input = control_input.get("roll", 0.0)
+        lift = control_input.get("lift", 0.0)  # Vertical wing thrust (hovering)
         
         # Update orientation
         self.yaw += yaw_input * self.turn_rate * dt
@@ -83,11 +84,14 @@ class FlyCharacter:
         # Apply thrust
         thrust_force = thrust_direction * thrust * self.max_acceleration
         
+        # Apply vertical wing thrust
+        lift_force = np.array([0.0, 0.0, lift * self.max_acceleration])
+        
         # Apply gravity (counteracted by thrust when flying)
         gravity_force = np.array([0.0, 0.0, -9.8]) * self.mass
         
         # Calculate total force
-        total_force = thrust_force + gravity_force
+        total_force = thrust_force + lift_force + gravity_force
         
         # Apply air resistance
         drag_force = -0.5 * self.velocity * np.linalg.norm(self.velocity) * 0.1
