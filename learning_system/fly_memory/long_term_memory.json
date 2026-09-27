@@ -1,0 +1,79 @@
+{
+  "knowledge": {
+    "python_basics": {
+      "value": {
+        "status": "learned"
+      },
+      "timestamp": 1790470740.7745502,
+      "importance": 0.8,
+      "access_count": 1,
+      "last_accessed": 1790470740.775284
+    }
+  },
+  "code_patterns": {
+    "python_pattern_1234350520490061408": {
+      "value": {
+        "pattern": "def test(): return 42",
+        "language": "python",
+        "frequency": 1,
+        "success_rate": true
+      },
+      "timestamp": 1789599438.5795567,
+      "importance": 0.7,
+      "access_count": 0,
+      "last_accessed": 1789599438.5795567
+    },
+    "python_pattern_-7723327536680855125": {
+      "value": {
+        "pattern": "function_definition:def test():",
+        "language": "python",
+        "frequency": 1,
+        "source_file": "test.py"
+      },
+      "timestamp": 1789599438.5816164,
+      "importance": 0.6,
+      "access_count": 0,
+      "last_accessed": 1789599438.5816166
+    },
+    "python_pattern_-1650305230417399506": {
+      "value": {
+        "pattern": "def test(): return 42",
+        "language": "python",
+        "frequency": 1,
+        "success_rate": true
+      },
+      "timestamp": 1790470740.776555,
+      "importance": 0.7,
+      "access_count": 0,
+      "last_accessed": 1790470740.7765553
+    },
+    "python_pattern_62133103807191340": {
+      "value": {
+        "pattern": "function_definition:def test():",
+        "language": "python",
+        "frequency": 1,
+        "source_file": "test.py"
+      },
+      "timestamp": 1790470740.7790635,
+      "importance": 0.6,
+      "access_count": 0,
+      "last_accessed": 1790470740.7790637
+    }
+  },
+  "files": {
+    "file_b284a28710cce90d9d9be3a7f4cabc8e": {
+      "value": {
+        "path": "test.py",
+        "language": "python",
+        "size": 25,
+        "lines": 2,
+        "complexity": 0.005,
+        "last_modified": 1790470740.7785707
+      },
+      "timestamp": 1790470740.778573,
+      "importance": 0.8,
+      "access_count": 0,
+      "last_accessed": 1790470740.7785733
+    }
+  }
+}

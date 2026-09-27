@@ -1,0 +1,18 @@
+[
+  {
+    "timestamp": 1789599438.580069,
+    "interaction": {
+      "code": "def test(): return 42",
+      "language": "python",
+      "success": true
+    }
+  },
+  {
+    "timestamp": 1790470740.7778409,
+    "interaction": {
+      "code": "def test(): return 42",
+      "language": "python",
+      "success": true
+    }
+  }
+]
