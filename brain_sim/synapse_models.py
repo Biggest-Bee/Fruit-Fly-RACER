@@ -15,10 +15,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 class Synapse:
     """
-    Individual synapse model with plasticity
+    Individual synapse model with plasticity and Hebbian learning
     """
     
-    def __init__(self, pre_neuron_id: int, post_neuron_id: int, weight: float):
+    def __init__(self, pre_neuron_id: int, post_neuron_id: int, weight: float,
+                 distance: float = 1.0):
         self.pre_neuron_id = pre_neuron_id
         self.post_neuron_id = post_neuron_id
         self.weight = weight
@@ -30,10 +31,56 @@ class Synapse:
         self.facilitation = 0.02  # Short-term facilitation
         self.depression_factor = 1.0
         self.facilitation_factor = 1.0
+        
+        # Distance-based properties
+        self.distance = distance
+        self.distance_probability = 1.0 / max(distance, 0.1)  # 1/distance
+        
+        # Hebbian learning properties
+        self.activation_count = 0
+        self.co_activation_count = 0  # Both pre and post active together
+        self.hebbian_strength = 0.0  # Learned shortcut strength
+        self.is_shortcut = False  # Whether this is a learned shortcut connection
+        self.usage_frequency = 0.0  # How often this path is used
     
     def get_effective_weight(self) -> float:
-        """Get current effective weight with short-term plasticity"""
-        return self.weight * self.depression_factor * self.facilitation_factor
+        """Get current effective weight with short-term plasticity and Hebbian learning"""
+        base_weight = self.weight * self.depression_factor * self.facilitation_factor
+        
+        # Add Hebbian shortcut strength if this is a shortcut
+        if self.is_shortcut:
+            base_weight += self.hebbian_strength
+        
+        return base_weight
+    
+    def activate(self):
+        """Activate synapse and update plasticity"""
+        self.last_activation = 1.0
+        self.activation_count += 1
+        
+        # Short-term depression
+        self.depression_factor *= (1 - self.depression)
+        
+        # Short-term facilitation
+        self.facilitation_factor += self.facilitation
+    
+    def co_activate(self):
+        """
+        Record co-activation of pre and post synaptic neurons
+        This is used for Hebbian learning of shortcuts
+        """
+        self.co_activation_count += 1
+        self.usage_frequency += 1.0
+        
+        # Hebbian learning: strengthen connection if frequently co-activated
+        if self.co_activation_count > 10:
+            # Strengthen based on co-activation frequency
+            self.hebbian_strength = min(2.0, self.hebbian_strength + 0.1)
+            
+            # If this connection is strong enough, mark as shortcut
+            if self.hebbian_strength > 0.5 and not self.is_shortcut:
+                self.is_shortcut = True
+                print(f"Shortcut formed: {self.pre_neuron_id} -> {self.post_neuron_id}")
     
     def activate(self):
         """Activate synapse and update plasticity"""
@@ -114,8 +161,8 @@ class SynapticConnectivity:
         print(f"Built adjacency matrix: {n_neurons} neurons, {self.adjacency_matrix.nnz} connections")
     
     def _build_synapse_objects(self):
-        """Build synapse objects for detailed simulation"""
-        print("Building synapse objects...")
+        """Build synapse objects for detailed simulation with distance-based probability"""
+        print("Building synapse objects with distance-based connections...")
         
         # Build a subset of synapses for detailed simulation
         # For full simulation, we'd use the matrix approach
@@ -127,10 +174,93 @@ class SynapticConnectivity:
             post_id = int(row['body_post'])
             weight = float(row['weight'])
             
-            synapse = Synapse(pre_id, post_id, weight)
+            # Calculate distance (simplified - in real implementation would use spatial coordinates)
+            distance = self._calculate_neuron_distance(pre_id, post_id)
+            
+            # Calculate connection probability based on distance
+            connection_prob = 1.0 / max(distance, 0.1)
+            
+            # Only create synapse if probability check passes (for long-distance shortcuts)
+            # Always create for existing connectome connections
+            synapse = Synapse(pre_id, post_id, weight, distance)
             self.synapses[(pre_id, post_id)] = synapse
         
         print(f"Created {len(self.synapses)} detailed synapse objects")
+    
+    def _calculate_neuron_distance(self, neuron_id1: int, neuron_id2: int) -> float:
+        """
+        Calculate distance between two neurons.
+        This is a simplified calculation - in a real implementation would use
+        spatial coordinates from the connectome data.
+        """
+        # Simple ID-based distance as proxy for spatial distance
+        # In real implementation, would use actual 3D coordinates
+        return abs(neuron_id1 - neuron_id2) / 1000.0  # Normalize to reasonable range
+    
+    def create_shortcut_connection(self, pre_neuron_id: int, post_neuron_id: int,
+                                   weight: float = 1.0) -> bool:
+        """
+        Create a shortcut connection between two neurons that are frequently used together.
+        This bypasses the normal multi-hop path.
+        
+        Args:
+            pre_neuron_id: Presynaptic neuron ID
+            post_neuron_id: Postsynaptic neuron ID
+            weight: Connection weight
+            
+        Returns:
+            True if shortcut was created
+        """
+        # Check if connection already exists
+        if (pre_neuron_id, post_neuron_id) in self.synapses:
+            existing = self.synapses[(pre_neuron_id, post_neuron_id)]
+            existing.is_shortcut = True
+            existing.hebbian_strength = max(existing.hebbian_strength, weight)
+            return True
+        
+        # Calculate distance
+        distance = self._calculate_neuron_distance(pre_neuron_id, post_neuron_id)
+        
+        # Create new shortcut synapse
+        synapse = Synapse(pre_neuron_id, post_neuron_id, weight, distance)
+        synapse.is_shortcut = True
+        synapse.hebbian_strength = weight
+        
+        self.synapses[(pre_neuron_id, post_neuron_id)] = synapse
+        
+        print(f"Created shortcut: {pre_neuron_id} -> {post_neuron_id} (distance: {distance:.2f})")
+        return True
+    
+    def detect_frequent_path(self, path: List[int], threshold: int = 10) -> bool:
+        """
+        Detect if a path is frequently used and should have a shortcut.
+        
+        Args:
+            path: List of neuron IDs in the path
+            threshold: Usage threshold for shortcut formation
+            
+        Returns:
+            True if shortcut should be created
+        """
+        if len(path) < 2:
+            return False
+        
+        # Check if the direct connections in the path are frequently co-activated
+        total_co_activation = 0
+        
+        for i in range(len(path) - 1):
+            pre = path[i]
+            post = path[i + 1]
+            synapse = self.get_synapse(pre, post)
+            if synapse:
+                total_co_activation += synapse.co_activation_count
+        
+        # If path is frequently used, create shortcut from start to end
+        if total_co_activation > threshold:
+            self.create_shortcut_connection(path[0], path[-1])
+            return True
+        
+        return False
     
     def get_inputs_for_neuron(self, neuron_id: int) -> List[Tuple[int, float]]:
         """

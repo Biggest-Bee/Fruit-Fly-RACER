@@ -17,9 +17,16 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 try:
     from .neuron_models import NeuronPopulation
     from .synapse_models import SynapticConnectivity
+    from .enhanced_human_regions import EnhancedHumanBrainIntegration
 except ImportError:
     from neuron_models import NeuronPopulation
     from synapse_models import SynapticConnectivity
+    from enhanced_human_regions import EnhancedHumanBrainIntegration
+
+try:
+    from llm_interface.translator import BrainTranslator
+except ImportError:
+    from translator import BrainTranslator
 
 
 class BrainEngine:
@@ -29,7 +36,10 @@ class BrainEngine:
     """
     
     def __init__(self, annotations_file: str, connectome_file: str, 
-                 max_neurons: Optional[int] = None, max_synapses: Optional[int] = None):
+                 max_neurons: Optional[int] = None, max_synapses: Optional[int] = None,
+                 enable_enhanced_regions: bool = True,
+                 prefrontal_neurons: int = 100000,
+                 wernicke_neurons: int = 100000):
         """
         Initialize the brain simulation engine
         
@@ -38,6 +48,9 @@ class BrainEngine:
             connectome_file: Path to connectome weights file
             max_neurons: Maximum number of neurons to load (for testing)
             max_synapses: Maximum number of synapses to load (for testing)
+            enable_enhanced_regions: Whether to enable enhanced human-like brain regions
+            prefrontal_neurons: Number of neurons in Prefrontal Cortex
+            wernicke_neurons: Number of neurons in Wernicke's Area
         """
         print("Initializing Brain Engine...")
         self.start_time = time.time()
@@ -47,6 +60,27 @@ class BrainEngine:
         
         # Load synaptic connectivity
         self.synaptic_connectivity = SynapticConnectivity(connectome_file, max_synapses)
+        
+        # Initialize enhanced human-like brain regions
+        self.enable_enhanced_regions = enable_enhanced_regions
+        if enable_enhanced_regions:
+            self.enhanced_brain = EnhancedHumanBrainIntegration(
+                prefrontal_neurons=prefrontal_neurons,
+                wernicke_neurons=wernicke_neurons
+            )
+            # Integrate with connectome
+            integration_stats = self.enhanced_brain.integrate_with_connectome(self)
+            print(f"Enhanced regions integrated: {integration_stats['percentage']:.2f}% additional neurons")
+        else:
+            self.enhanced_brain = None
+        
+        # Initialize brain translator (will be connected if API key is available)
+        self.brain_translator = None
+        try:
+            self.brain_translator = BrainTranslator(enable_wernicke=enable_enhanced_regions)
+            print("Brain translator connected to brain engine")
+        except Exception as e:
+            print(f"Brain translator not available: {e}")
         
         # Simulation state
         self.current_time = 0.0
@@ -70,12 +104,20 @@ class BrainEngine:
         synapse_stats = self.synaptic_connectivity.get_connectivity_stats()
         
         print("\n=== Brain Engine Statistics ===")
-        print(f"Neurons: {neuron_stats['total_neurons']}")
+        print(f"Connectome Neurons: {neuron_stats['total_neurons']}")
         print(f"Neuron types: {neuron_stats['type_distribution']}")
         print(f"Synaptic connections: {synapse_stats['total_connections']}")
         print(f"Average connections per neuron: {synapse_stats['average_connections_per_neuron']:.2f}")
         print(f"Network sparsity: {synapse_stats['sparsity']:.6f}")
         print(f"Weight range: {synapse_stats['weight_statistics']['min']:.2f} to {synapse_stats['weight_statistics']['max']:.2f}")
+        
+        if self.enable_enhanced_regions and self.enhanced_brain:
+            enhanced_stats = self.enhanced_brain.get_statistics()
+            print(f"\nEnhanced Regions:")
+            print(f"  Prefrontal Cortex: {enhanced_stats['prefrontal_cortex']['total_neurons']:,} neurons")
+            print(f"  Wernicke's Area: {enhanced_stats['wernicke_area']['total_neurons']:,} neurons")
+            print(f"  Integration ratio: {enhanced_stats['integration']['ratio']:.4f}")
+        
         print("=" * 30 + "\n")
     
     def step(self) -> Dict[int, float]:

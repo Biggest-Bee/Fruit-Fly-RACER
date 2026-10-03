@@ -20,13 +20,26 @@ except ImportError:
 
 from dotenv import load_dotenv
 
+try:
+    from .github_rate_limiter import GitHubRateLimiter
+    from .github_repo_puller import GitHubRepoPuller
+except ImportError:
+    from github_rate_limiter import GitHubRateLimiter
+    from github_repo_puller import GitHubRepoPuller
+
 class AITrainingInterface:
     """
     AI training interface using Gemini API for coding instruction and evaluation
     """
     
-    def __init__(self):
-        """Initialize the AI training interface"""
+    def __init__(self, enable_github: bool = False, github_token: Optional[str] = None):
+        """
+        Initialize the AI training interface
+        
+        Args:
+            enable_github: Whether to enable GitHub repository pulling
+            github_token: Optional GitHub token for authenticated requests
+        """
         load_dotenv()
         
         # Get API key
@@ -53,6 +66,27 @@ class AITrainingInterface:
         # Training history
         self.training_sessions = []
         self.current_session = None
+        
+        # GitHub integration
+        self.enable_github = enable_github
+        self.github_rate_limiter = None
+        self.github_repo_puller = None
+        
+        if enable_github:
+            # Get GitHub token from env if not provided
+            if not github_token:
+                github_token = os.getenv("GITHUB_TOKEN")
+            
+            authenticated = bool(github_token)
+            self.github_rate_limiter = GitHubRateLimiter(
+                authenticated=authenticated,
+                github_token=github_token
+            )
+            self.github_repo_puller = GitHubRepoPuller(
+                self.github_rate_limiter,
+                workspace_dir="github_repos"
+            )
+            print("GitHub integration enabled for training")
     
     def start_training_session(self, curriculum) -> Dict:
         """
@@ -387,6 +421,160 @@ class AITrainingInterface:
         self.api_usage_count = 0
         self.quota_exhausted = False
         print("API quota reset")
+    
+    # ---------------------------------------------------------------- GitHub integration
+    def pull_github_repository(self, repo_url: str, branch: Optional[str] = None,
+                              depth: Optional[int] = None) -> Dict:
+        """
+        Pull a GitHub repository for the fly to study.
+        
+        Args:
+            repo_url: GitHub repository URL
+            branch: Optional branch to clone
+            depth: Optional clone depth for shallow clone
+            
+        Returns:
+            Result dictionary with success status and information
+        """
+        if not self.enable_github or not self.github_repo_puller:
+            return {
+                "success": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        success, message, local_path = self.github_repo_puller.clone_repository(
+            repo_url, branch, depth
+        )
+        
+        return {
+            "success": success,
+            "message": message,
+            "local_path": local_path,
+            "repo_url": repo_url
+        }
+    
+    def get_github_file(self, repo_url: str, file_path: str) -> Dict:
+        """
+        Get a file from a GitHub repository.
+        
+        Args:
+            repo_url: GitHub repository URL
+            file_path: Path to file within repository
+            
+        Returns:
+            Result dictionary with file content
+        """
+        if not self.enable_github or not self.github_repo_puller:
+            return {
+                "success": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        success, content, message = self.github_repo_puller.get_file_contents(
+            repo_url, file_path
+        )
+        
+        return {
+            "success": success,
+            "content": content,
+            "message": message,
+            "repo_url": repo_url,
+            "file_path": file_path
+        }
+    
+    def list_github_files(self, repo_url: str, path: str = "") -> Dict:
+        """
+        List files in a GitHub repository directory.
+        
+        Args:
+            repo_url: GitHub repository URL
+            path: Path within repository (empty for root)
+            
+        Returns:
+            Result dictionary with list of files
+        """
+        if not self.enable_github or not self.github_repo_puller:
+            return {
+                "success": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        success, files, message = self.github_repo_puller.list_repository_files(
+            repo_url, path
+        )
+        
+        return {
+            "success": success,
+            "files": files,
+            "message": message,
+            "repo_url": repo_url,
+            "path": path
+        }
+    
+    def get_github_commits(self, repo_url: str, max_count: int = 10) -> Dict:
+        """
+        Get commit history from a GitHub repository.
+        
+        Args:
+            repo_url: GitHub repository URL
+            max_count: Maximum number of commits to retrieve
+            
+        Returns:
+            Result dictionary with commit history
+        """
+        if not self.enable_github or not self.github_repo_puller:
+            return {
+                "success": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        success, commits, message = self.github_repo_puller.get_commit_history(
+            repo_url, max_count
+        )
+        
+        return {
+            "success": success,
+            "commits": commits,
+            "message": message,
+            "repo_url": repo_url
+        }
+    
+    def get_github_status(self) -> Dict:
+        """Get current GitHub integration status."""
+        if not self.enable_github:
+            return {
+                "enabled": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        return {
+            "enabled": True,
+            "rate_limiter": self.github_rate_limiter.get_status(),
+            "repo_puller": self.github_repo_puller.get_status()
+        }
+    
+    def cleanup_github_repo(self, repo_url: str) -> Dict:
+        """
+        Clean up a cloned GitHub repository.
+        
+        Args:
+            repo_url: GitHub repository URL
+            
+        Returns:
+            Result dictionary
+        """
+        if not self.enable_github or not self.github_repo_puller:
+            return {
+                "success": False,
+                "reason": "GitHub integration not enabled"
+            }
+        
+        success = self.github_repo_puller.cleanup_repository(repo_url)
+        
+        return {
+            "success": success,
+            "repo_url": repo_url
+        }
 
 
 if __name__ == "__main__":

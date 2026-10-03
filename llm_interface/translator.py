@@ -4,6 +4,7 @@ Handles translation between human language and brain activation patterns using G
 """
 
 import os
+import pandas as pd
 try:
     import google.generativeai as genai
 except ImportError:
@@ -14,14 +15,27 @@ from dotenv import load_dotenv
 from typing import Dict, List, Optional, Tuple
 import json
 import numpy as np
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+try:
+    from brain_sim.enhanced_human_regions import WernickeArea
+except ImportError:
+    from enhanced_human_regions import WernickeArea
 
 class BrainTranslator:
     """
     Translates between human language and brain activation patterns
     """
     
-    def __init__(self):
-        """Initialize the brain translator with Gemini API"""
+    def __init__(self, enable_wernicke: bool = True):
+        """
+        Initialize the brain translator with Gemini API and Wernicke's Area
+        
+        Args:
+            enable_wernicke: Whether to use Wernicke's Area for translation
+        """
         load_dotenv()
         
         # Get API key
@@ -35,6 +49,14 @@ class BrainTranslator:
         
         # Initialize language cortex mapping
         self.language_to_brain_mapping = self._initialize_language_mapping()
+        
+        # Initialize Wernicke's Area for enhanced translation
+        self.enable_wernicke = enable_wernicke
+        if enable_wernicke:
+            self.wernicke_area = WernickeArea(num_neurons=100000)
+            print("Wernicke's Area enabled for translation")
+        else:
+            self.wernicke_area = None
         
         print("Brain Translator initialized with Gemini API")
     
@@ -81,6 +103,51 @@ class BrainTranslator:
         Returns:
             Dictionary mapping neuron IDs to activation currents
         """
+        # If Wernicke's Area is enabled, use it for initial translation
+        if self.enable_wernicke and self.wernicke_area:
+            wernicke_activation = self.wernicke_area.translate_english_to_brain(text)
+            
+            # Enhance with Gemini for more nuanced understanding
+            try:
+                prompt = f"""
+                Analyze this text and extract the key concepts and actions: "{text}"
+                
+                Wernicke's Area suggests these activations: {wernicke_activation}
+                
+                Return a JSON object with:
+                - "concepts": list of key concepts (simple words)
+                - "actions": list of actions (verbs)
+                - "emotions": list of emotional states
+                - "intensity": overall intensity (0.0 to 1.0)
+                """
+                response = self.model.generate_content(prompt)
+                response_text = response.text
+                
+                # Parse the response
+                try:
+                    json_start = response_text.find('{')
+                    json_end = response_text.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = response_text[json_start:json_end]
+                        analysis = json.loads(json_str)
+                    else:
+                        analysis = self._fallback_analysis(text)
+                except:
+                    analysis = self._fallback_analysis(text)
+                
+                # Merge Wernicke activation with Gemini analysis
+                activation_patterns = self._concepts_to_activation(analysis)
+                
+                # Add Wernicke's activations
+                for key, value in wernicke_activation.items():
+                    activation_patterns[key] = activation_patterns.get(key, 0.0) + value
+                
+                return activation_patterns
+                
+            except Exception as e:
+                print(f"Error enhancing with Gemini: {e}")
+                return wernicke_activation
+        
         # Use Gemini to understand the text and extract key concepts
         prompt = f"""
         Analyze this text and extract the key concepts and actions: "{text}"
@@ -186,6 +253,29 @@ class BrainTranslator:
         Returns:
             Human language response
         """
+        # If Wernicke's Area is enabled, use it for translation
+        if self.enable_wernicke and self.wernicke_area:
+            wernicke_translation = self.wernicke_area.translate_brain_to_english(
+                brain_activity, firing_neurons
+            )
+            
+            # Enhance with Gemini for more natural language
+            try:
+                prompt = f"""
+                Based on this brain activity analysis and Wernicke's Area translation,
+                generate a natural language response:
+                
+                Wernicke's Translation: {wernicke_translation}
+                
+                Generate a simple, conversational response as if you are a fruit fly brain.
+                Keep it brief and natural, in first person ("I feel...", "I want...").
+                """
+                response = self.model.generate_content(prompt)
+                return response.text.strip()
+            except Exception as e:
+                print(f"Error enhancing with Gemini: {e}")
+                return wernicke_translation
+        
         # Analyze the brain activity patterns
         activity_summary = self._analyze_brain_activity(brain_activity, firing_neurons)
         
@@ -200,7 +290,7 @@ class BrainTranslator:
         - Dominant states: {activity_summary['dominant_states']}
         
         Generate a simple, conversational response as if you are a fruit fly brain.
-        Keep it brief and natural.
+        Keep it brief and natural, in first person ("I feel...", "I want...").
         """
         
         try:

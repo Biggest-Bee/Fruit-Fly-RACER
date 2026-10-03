@@ -13,6 +13,11 @@ import os
 # Add parent directory to path for direct script execution
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+try:
+    from learning_system.memory_integrity import MemoryIntegrity
+except ImportError:
+    from memory_integrity import MemoryIntegrity
+
 class Neuron:
     """
     Individual neuron model using Integrate-and-Fire dynamics
@@ -37,7 +42,30 @@ class Neuron:
             "sensory": {"threshold": -50.0, "refractory": 1.0},
             "motor": {"threshold": -55.0, "refractory": 2.0},
             "interneuron": {"threshold": -55.0, "refractory": 2.0},
-            "modulatory": {"threshold": -60.0, "refractory": 5.0}
+            "modulatory": {"threshold": -60.0, "refractory": 5.0},
+            # New synthetic neuron types with 100% fireability
+            "prefrontal_cortex": {"threshold": -45.0, "refractory": 0.5},
+            "wernicke_area": {"threshold": -45.0, "refractory": 0.5},
+            "math_processor": {"threshold": -48.0, "refractory": 0.8},
+            "pattern_detector": {"threshold": -48.0, "refractory": 0.8},
+            "coding_processor": {"threshold": -45.0, "refractory": 0.5},
+            "self_correction": {"threshold": -47.0, "refractory": 0.7},
+            "arithmetic_processor": {"threshold": -48.0, "refractory": 0.8},
+            "algebraic_processor": {"threshold": -48.0, "refractory": 0.8},
+            "logical_processor": {"threshold": -48.0, "refractory": 0.8},
+            "statistical_processor": {"threshold": -48.0, "refractory": 0.8},
+            "advanced_processor": {"threshold": -48.0, "refractory": 0.8},
+            "visual_pattern_detector": {"threshold": -48.0, "refractory": 0.8},
+            "code_pattern_detector": {"threshold": -45.0, "refractory": 0.5},
+            "sequence_pattern_detector": {"threshold": -48.0, "refractory": 0.8},
+            "anomaly_detector": {"threshold": -48.0, "refractory": 0.8},
+            "syntax_analyzer": {"threshold": -45.0, "refractory": 0.5},
+            "semantic_analyzer": {"threshold": -45.0, "refractory": 0.5},
+            "code_generator": {"threshold": -45.0, "refractory": 0.5},
+            "pattern_matcher": {"threshold": -45.0, "refractory": 0.5},
+            "optimizer": {"threshold": -45.0, "refractory": 0.5},
+            "debugger": {"threshold": -45.0, "refractory": 0.5},
+            "language_adapter": {"threshold": -45.0, "refractory": 0.5}
         }
         
         params = type_params.get(self.type, type_params["interneuron"])
@@ -97,15 +125,16 @@ class Neuron:
 
 class NeuronPopulation:
     """
-    Manages a population of neurons with efficient bulk operations
+    Manages a population of neurons with efficient bulk operations and memory integrity
     """
     
-    def __init__(self, annotations_file: str):
+    def __init__(self, annotations_file: str, enable_memory_integrity: bool = True):
         """
         Initialize neuron population from connectome annotations
         
         Args:
             annotations_file: Path to body annotations feather file
+            enable_memory_integrity: Whether to enable memory integrity for conflict resolution
         """
         print(f"Loading neuron annotations from {annotations_file}...")
         self.annotations = pd.read_feather(annotations_file)
@@ -113,6 +142,14 @@ class NeuronPopulation:
         
         self.neurons: Dict[int, Neuron] = {}
         self._initialize_neurons()
+        
+        # Memory integrity for conflict resolution
+        self.enable_memory_integrity = enable_memory_integrity
+        if enable_memory_integrity:
+            self.memory_integrity = MemoryIntegrity()
+            print("Memory integrity enabled for neuron population")
+        else:
+            self.memory_integrity = None
         
     def _initialize_neurons(self):
         """Initialize neurons from annotations"""

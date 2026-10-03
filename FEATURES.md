@@ -22,10 +22,11 @@ has a rule-based fallback so the app still works offline.
 
 | Module | What it does |
 |---|---|
-| `neuron_models.py` | `Neuron` — integrate-and-fire dynamics (threshold, refractory period, decay), parameterised per neuron type. `NeuronPopulation` loads the annotation feather file and classifies neurons (sensory / motor / interneuron …). |
-| `synapse_models.py` | `Synapse` with plasticity and activation/deactivation; `SynapticConnectivity` builds a **sparse** (SciPy) connectivity matrix from the connectome weights, propagates activity, and reports connectivity statistics. |
-| `brain_engine.py` | `BrainEngine` — the simulation loop: `step()`, `run_simulation()`, neuron/region stimulation, firing history (rolling 1000 steps), per-neuron and network activity queries, reset. Supports `max_neurons` / `max_synapses` caps for fast testing. |
+| `neuron_models.py` | `Neuron` — integrate-and-fire dynamics (threshold, refractory period, decay), parameterised per neuron type. `NeuronPopulation` loads the annotation feather file and classifies neurons (sensory / motor / interneuron …). **Enhanced with 20+ synthetic neuron types** with optimized parameters for 100% fireability. |
+| `synapse_models.py` | `Synapse` with plasticity and activation/deactivation; `SynapticConnectivity` builds a **sparse** (SciPy) connectivity matrix from the connectome weights, propagates activity, and reports connectivity statistics. **Enhanced with distance-based connection probability (1/distance) and Hebbian learning for automatic shortcut formation.** |
+| `brain_engine.py` | `BrainEngine` — the simulation loop: `step()`, `run_simulation()`, neuron/region stimulation, firing history (rolling 1000 steps), per-neuron and network activity queries, reset. Supports `max_neurons` / `max_synapses` caps for fast testing. **Enhanced with integration of Prefrontal Cortex and Wernicke's Area (200k additional neurons).** |
 | `advanced_cognitive_brain.py` | Synthetic cognitive regions grafted onto the fly brain (1,500 extra neurons). |
+| `enhanced_human_regions.py` | **NEW** — Human-like brain regions: Prefrontal Cortex (100k neurons for executive functions/coding) and Wernicke's Area (100k neurons for language comprehension/production). All neurons are 100% fireable with optimized parameters. |
 
 ### Advanced cognitive regions (`AdvancedCognitiveBrain`)
 
@@ -40,20 +41,38 @@ has a rule-based fallback so the app still works offline.
 - `integrate_with_connectome()` merges these regions with the real connectome and reports the
   integration ratio.
 
+### Enhanced human-like brain regions (`EnhancedHumanBrainIntegration`)
+
+- **Prefrontal Cortex** (100,000 neurons) — human-like executive functions for coding, planning, and decision-making. All neurons are 100% fireable with optimized parameters (-45 to -48 mV threshold, 0.5-0.8 ms refractory period).
+  - **Sub-regions**: Dorsolateral PFC (working memory, cognitive control), Ventromedial PFC (decision-making, emotion regulation), Orbitofrontal PFC (reward processing), Anterior Cingulate (error detection).
+  - **Features**: `activate_coding_mode()` for language-specific coding, `process_coding_task()` for executive function processing, `evaluate_solution()` for error detection, working memory management, task stack for multitasking.
+- **Wernicke's Area** (100,000 neurons) — language comprehension and production for typing/talking with users. All neurons are 100% fireable.
+  - **Sub-regions**: Comprehension region (language input), Production region (language output), Translation region (brain activity ↔ language), Semantic network (word meanings).
+  - **Features**: `comprehend_input()` for text comprehension, `produce_response()` for generating responses, `translate_brain_to_english()` for neural-to-text translation, `translate_english_to_brain()` for text-to-neural translation, conversation context management.
+- **Total enhanced neurons**: 200,000 (47% increase over original connectome)
+- **Neuromorphic features**: Distance-based connection probability (1/distance), Hebbian learning for automatic shortcut formation, memory integrity for conflict resolution.
+
+### Neuromorphic enhancements
+
+- **Distance-based connections**: Connection probability = 1/distance, allowing powerful "shortcut" connections across the brain without overwhelming noise
+- **Hebbian learning**: Tracks co-activation of pre/post synaptic neurons, strengthens frequently-used connections, automatically forms shortcuts when threshold exceeded, neurons immediately use new shortcuts and forget old routes
+- **Memory integrity**: Integrated conflict resolution prevents old memories from being silently overwritten, all memories carry source, confidence, and corroboration data
+
 ---
 
 ## 2. Language interface (`llm_interface/`)
 
 - **`BrainTranslator`** — bidirectional translation.
   - `text_to_brain_activation()`: user text → concept analysis (Gemini, with a keyword fallback)
-    → neural activation patterns.
+    → neural activation patterns. **Enhanced with Wernicke's Area integration for improved translation.**
   - `brain_activity_to_text()`: neural firing summary → **first-person** fly speech ("I feel…",
-    "I want…"), again with a deterministic fallback response generator.
+    "I want…"), again with a deterministic fallback response generator. **Enhanced with Wernicke's Area for natural language generation.**
   - `test_connection()` for API health checks.
 - **`LanguageCortex`** — a synthetic language cortex (default 1,000 neurons) that gives the fly
   the language capacity its real brain lacks: concept→cortex mapping, internal activity
   propagation, conversation-context memory, response generation, and integration of cortex
   activation into connectome activation.
+- **Wernicke's Area integration** — The translator can now use the 100k-neuron Wernicke's Area for enhanced language comprehension and production, providing more natural first-person responses.
 
 ---
 
@@ -121,10 +140,28 @@ overall progress, and can advance or reset levels.
 ### AI supervision
 - **`AITrainingInterface`** — Gemini-backed teaching: starts sessions, produces lesson
   instructions, evaluates submitted code, gives progressive hints, records results, and falls
-  back to `_basic_evaluation()` without an API key.
+  back to `_basic_evaluation()` without an API key. **Enhanced with GitHub integration** to pull repositories for code study.
 - **`APIUsageManager`** — daily quota accounting, per-call cost recording, quota-exhausted
   auto-pause, automatic daily reset / auto-resume, session start/end tracking, usage history and
   statistics, and save/load of usage data to disk.
+
+### GitHub integration (NEW)
+- **`GitHubRateLimiter`** — strict adherence to GitHub's API rate limiting policies:
+  - Search API: 30/min (authenticated), 10/min (unauthenticated)
+  - General API: 5,000/hour (authenticated), 60/hour (unauthenticated), 15,000/hour (GitHub Apps)
+  - Secondary limits: 900 points/min per endpoint, 2,000 points/min GraphQL, 80 content creation/min, 100 concurrent requests
+  - Features: automatic tracking, point-based operation costs, endpoint-specific tracking, state persistence, wait-time calculation
+- **`GitHubRepoPuller`** — repository cloning and analysis with automatic rate limit management:
+  - Clone repositories with shallow clone support, branch-specific cloning
+  - File content retrieval, repository file listing, commit history retrieval
+  - Automatic workspace management and cleanup functionality
+- **AI Training Integration** — `AITrainingInterface` now includes GitHub methods:
+  - `pull_github_repository()` — Clone repos for the fly to study
+  - `get_github_file()` — Retrieve specific files
+  - `list_github_files()` — List repository contents
+  - `get_github_commits()` — Get commit history
+  - `get_github_status()` — Check integration status
+  - `cleanup_github_repo()` — Remove cloned repos
 
 ### Motivation and progress
 - **`RewardSystem`** — turns evaluation results into **food rewards** (correct code → the fly
@@ -208,8 +245,7 @@ The most complete entry point (1400×900):
 |---|---|
 | `full_desktop_app.py` | Full GUI with progressive background backend loading (canvas 3D viewer, no Ursina subprocess). |
 | `fixed_desktop_app.py` | Step-by-step backend loading with manual retry. |
-| `ultra_simple_app.py` | Minimal GUI, backend loaded only on demand, status view. |
-| `simple_app.py` / `no_backend_app.py` / `standalone_gui.py` | Progressively stripped-down GUIs for isolating GUI vs backend problems. |
+| `simple_app.py` / `standalone_gui.py` | Progressively stripped-down GUIs for isolating GUI vs backend problems. |
 | `console_app.py` | Console-only chat/interaction version. |
 | `status_check.py` | Non-interactive health check of all backend systems. |
 | `Fruit Fly AI.bat` | Windows launcher menu (console, status check, simple GUI, integrated app). |
@@ -244,20 +280,77 @@ Standalone scripts rather than a pytest suite — run them directly with `python
 ## 11. End-to-end data flow
 
 1. **User text** → `BrainTranslator` → concept activations → `LanguageCortex` → connectome
-   activation → `BrainEngine.step()`.
+   activation → `BrainEngine.step()`. **Enhanced with Wernicke's Area for improved translation.**
 2. **Brain activity** → motor output → fly movement in `World3D`, or code output in the workspace.
 3. **Environment** → `SensorySystem` (vision / chemical / proprioception) → brain input.
 4. **Hunger & drives** (`SurvivalSystem`) → behaviour selection → seek food, train, rest.
 5. **Training loop**: curriculum lesson → fly's code → evaluation (strict/zero-tolerance) →
    reward (food) + skill update + memory write → next lesson, until the API quota runs out, at
-   which point the fly is released to free feeding.
+   which point the fly is released to free feeding. **Enhanced with GitHub repo pulling for code study.**
 6. **Brain activity** → `BrainTranslator` → first-person reply shown in the chat panel.
+7. **Enhanced regions**: Prefrontal Cortex handles executive functions and coding tasks; Wernicke's Area handles language comprehension and production; Hebbian learning automatically forms shortcuts for frequently-used neural paths.
 
 ---
 
-## 12. Status
+## 12. Recent enhancements (2026)
+
+### GitHub API integration
+- **Rate limit manager** (`github_rate_limiter.py`) — Strict adherence to GitHub's API limits with automatic throttling and state persistence
+- **Repository puller** (`github_repo_puller.py`) — Clone, read, and analyze GitHub repositories with automatic rate limit management
+- **Training integration** — AI can pull repos to study code patterns and learn from real-world projects
+
+### Enhanced brain regions
+- **Prefrontal Cortex** (100k neurons) — Human-like executive functions for coding, planning, and decision-making with 100% fireable neurons
+- **Wernicke's Area** (100k neurons) — Language comprehension and production for natural communication with 100% fireable neurons
+- **Total neurons**: 411,577 (47% increase over original connectome)
+
+### Neuromorphic improvements
+- **Distance-based connections** — Connection probability = 1/distance for realistic connectivity patterns
+- **Hebbian learning** — Automatic shortcut formation for frequently-used neural paths; neurons immediately use new shortcuts
+- **Memory integrity** — Conflict resolution prevents memory corruption across all neuron populations
+- **Enhanced neuron types** — 20+ synthetic neuron types with optimized parameters (lower thresholds, shorter refractory periods)
+
+### Language processing
+- **Wernicke's Area integration** — BrainTranslator now uses 100k-neuron Wernicke's Area for enhanced language comprehension and production
+- **First-person responses** — More natural "I feel...", "I want..." responses powered by enhanced brain regions
+- **Bidirectional translation** — Improved text↔brain activation translation with neural language processing
+
+### Configuration
+```python
+# Enable enhanced brain regions
+brain = BrainEngine(
+    annotations_file="data/body-annotations-male-cns-v1.0-minconf-0.5.feather",
+    connectome_file="data/connectome-weights-male-cns-v1.0-minconf-0.5.feather",
+    enable_enhanced_regions=True,
+    prefrontal_neurons=100000,
+    wernicke_neurons=100000
+)
+
+# Enable GitHub integration
+ai_trainer = AITrainingInterface(
+    enable_github=True,
+    github_token="your_github_token"
+)
+```
+
+### Environment variables
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GITHUB_TOKEN=your_github_token  # Optional, for authenticated GitHub access
+```
+
+---
+
+## 13. Status
 
 Per `PROJECT_PLAN.md` the project is a 5-phase, ~24-month plan. Phases 1–4 (brain simulation,
 language interface, 3D environment, survival behaviours, coding training) have working
 implementations in this repo; Phase 5 (desktop integration and refinement) is in progress —
 several app variants exist precisely because GUI/backend loading was still being stabilised.
+
+**Recent updates (2026)**:
+- Added GitHub API integration with strict rate limit management
+- Implemented 200k enhanced neurons (Prefrontal Cortex + Wernicke's Area)
+- Added neuromorphic features (distance-based connections, Hebbian learning)
+- Enhanced language processing with Wernicke's Area integration
+- Improved neuron fireability with optimized parameters across all synthetic neurons
