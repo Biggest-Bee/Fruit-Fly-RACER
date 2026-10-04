@@ -96,9 +96,9 @@ def run():
                         position=(-0.1, 0.35, -0.9), parent=fly)
 
     # ---------------------------------------------------------------- free cam
-    camera.position = (0, ROOM_HEIGHT * 0.6, -ROOM_SIZE)
-    camera.rotation = (10, 0, 0)
-    camera_angle = [0.0, 10.0]
+    camera.position = (0, ROOM_HEIGHT * 0.8, -ROOM_SIZE * 0.5)
+    camera.rotation = (20, 0, 0)
+    camera_angle = [0.0, 20.0]
 
     hud = Text(text='', position=(-0.86, 0.46), scale=0.9, color=color.white)
     Text(
