@@ -35,14 +35,14 @@ class PrefrontalCortex:
         self.num_neurons = num_neurons
         self.neurons: Dict[int, Neuron] = {}
         
-        # Create neurons with specialized sub-regions
-        self._initialize_neurons()
-        
-        # Sub-regions of prefrontal cortex
+        # Sub-regions of prefrontal cortex (initialize before calling _initialize_neurons)
         self.dorsolateral_pfc = set()  # Working memory, cognitive control
         self.ventromedial_pfc = set()  # Decision-making, emotion regulation
         self.orbitofrontal_pfc = set()  # Reward processing, value assessment
         self.anterior_cingulate = set()  # Error detection, conflict monitoring
+        
+        # Create neurons with specialized sub-regions
+        self._initialize_neurons()
         
         # Cognitive state
         self.working_memory = {}  # Short-term memory for active tasks
@@ -236,14 +236,14 @@ class WernickeArea:
         self.num_neurons = num_neurons
         self.neurons: Dict[int, Neuron] = {}
         
-        # Create neurons with specialized sub-regions
-        self._initialize_neurons()
-        
-        # Sub-regions
+        # Sub-regions (initialize before _initialize_neurons)
         self.comprehension_region = set()  # Language comprehension
         self.production_region = set()  # Language production
         self.translation_region = set()  # Translation between brain activity and language
         self.semantic_network = set()  # Word meanings and concepts
+        
+        # Create neurons with specialized sub-regions
+        self._initialize_neurons()
         
         # Language state
         self.vocabulary = {}  # Known words and their neural representations

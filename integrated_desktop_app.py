@@ -64,6 +64,9 @@ class FullDesktopAppWith3D:
         # Load backend in background
         self.root.after(100, self.start_backend_loading)
         
+        # Auto-launch 3D environment after a short delay
+        self.root.after(2000, self.launch_3d_environment)
+        
         print("DEBUG: FullDesktopAppWith3D initialization complete")
     
     def create_menu(self):
@@ -357,6 +360,11 @@ class FullDesktopAppWith3D:
         self.three_d_status.config(text="Launching...", foreground="orange")
         
         try:
+            # Clear placeholder and show message
+            self.three_d_canvas.delete("all")
+            self.three_d_canvas.create_text(300, 200, text="Launching Ursina 3D Window...", fill="white", font=("Arial", 14))
+            self.three_d_canvas.create_text(300, 230, text="A separate window will open", fill="yellow", font=("Arial", 12))
+            
             # Launch 3D environment in separate process
             self.three_d_process = subprocess.Popen(
                 [sys.executable, "3d_environment/real_3d_environment.py"],
@@ -365,11 +373,20 @@ class FullDesktopAppWith3D:
             self.three_d_running = True
             self.three_d_status_label.config(text="Running", foreground="green")
             self.three_d_status.config(text="Running", foreground="green")
+            
+            # Update canvas to show 3D is running
+            self.three_d_canvas.delete("all")
+            self.three_d_canvas.create_text(300, 200, text="3D Environment Running", fill="green", font=("Arial", 16, "bold"))
+            self.three_d_canvas.create_text(300, 230, text="Separate Ursina window is open", fill="white", font=("Arial", 12))
+            self.three_d_canvas.create_text(300, 260, text="Controls: WASD to move, Mouse to look, ESC to exit", fill="yellow", font=("Arial", 10))
+            
             self.add_chat_message("System", "3D environment launched successfully")
+            self.add_chat_message("System", "A separate Ursina 3D window has opened")
             self.add_chat_message("System", "Use WASD to move, mouse to look, ESC to exit")
         except Exception as e:
             self.add_chat_message("System", f"Failed to launch 3D: {e}")
             self.three_d_status_label.config(text="Error", foreground="red")
+            self.draw_placeholder_3d()  # Show placeholder again on error
     
     def close_3d_environment(self):
         """Close the 3D environment"""
