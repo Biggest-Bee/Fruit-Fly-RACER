@@ -354,3 +354,4 @@ several app variants exist precisely because GUI/backend loading was still being
 - Added neuromorphic features (distance-based connections, Hebbian learning)
 - Enhanced language processing with Wernicke's Area integration
 - Improved neuron fireability with optimized parameters across all synthetic neurons
+- Improved app gui and 3d environment integration
