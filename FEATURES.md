@@ -343,10 +343,9 @@ GITHUB_TOKEN=your_github_token  # Optional, for authenticated GitHub access
 
 ## 13. Status
 
-Per `PROJECT_PLAN.md` the project is a 5-phase, ~24-month plan. Phases 1–4 (brain simulation,
+Per `PROJECT_PLAN.md` the project is a 6-phase, ~24-month plan. Phases 1–4 (brain simulation,
 language interface, 3D environment, survival behaviours, coding training) have working
-implementations in this repo; Phase 5 (desktop integration and refinement) is in progress —
-several app variants exist precisely because GUI/backend loading was still being stabilised.
+implementations in this repo; Phase 5 (desktop integration and refinement); Phase 6 (debugging) is in progress - currently working on 3D environment.
 
 **Recent updates (2026)**:
 - Added GitHub API integration with strict rate limit management
@@ -354,3 +353,4 @@ several app variants exist precisely because GUI/backend loading was still being
 - Added neuromorphic features (distance-based connections, Hebbian learning)
 - Enhanced language processing with Wernicke's Area integration
 - Improved neuron fireability with optimized parameters across all synthetic neurons
+- Improved app GUI
