@@ -284,28 +284,28 @@ class FullDesktopAppWith3D:
         print("DEBUG: Creating training panel...")
         
         # Create scrollable container for right panel
-        right_scroll_frame = ttk.Frame(self.right_paned)
-        self.right_paned.add(right_scroll_frame, weight=1)
+        self.right_scroll_frame = ttk.Frame(self.right_paned)
+        self.right_paned.add(self.right_scroll_frame, weight=1)
         
         # Scrollbar
-        right_scrollbar = ttk.Scrollbar(right_scroll_frame, orient="vertical")
-        right_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.right_scrollbar = ttk.Scrollbar(self.right_scroll_frame, orient="vertical")
+        self.right_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Scrollable canvas
-        right_canvas = tk.Canvas(right_scroll_frame, yscrollcommand=right_scrollbar.set)
-        right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.right_canvas = tk.Canvas(self.right_scroll_frame, yscrollcommand=self.right_scrollbar.set)
+        self.right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        right_scrollbar.config(command=right_canvas.yview)
+        self.right_scrollbar.config(command=self.right_canvas.yview)
         
         # Frame inside canvas
-        right_inner_frame = ttk.Frame(right_canvas)
-        right_canvas.create_window((0, 0), window=right_inner_frame, anchor="nw")
+        self.right_inner_frame = ttk.Frame(self.right_canvas)
+        self.right_canvas.create_window((0, 0), window=self.right_inner_frame, anchor="nw")
         
         # Configure scroll
-        right_inner_frame.bind("<Configure>", lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
+        self.right_inner_frame.bind("<Configure>", lambda e: self.right_canvas.configure(scrollregion=self.right_canvas.bbox("all")))
         
         # Training Panel
-        training_frame = ttk.LabelFrame(right_inner_frame, text="Training Panel")
+        training_frame = ttk.LabelFrame(self.right_inner_frame, text="Training Panel")
         training_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Language selection
@@ -348,7 +348,7 @@ class FullDesktopAppWith3D:
         self.language_progress_label.pack(anchor=tk.W, padx=5, pady=5)
         
         # Training Files Panel (NEW)
-        training_files_frame = ttk.LabelFrame(right_inner_frame, text="Training Files")
+        training_files_frame = ttk.LabelFrame(self.right_inner_frame, text="Training Files")
         training_files_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Mode selection
@@ -382,7 +382,7 @@ class FullDesktopAppWith3D:
         print("DEBUG: Creating status panel...")
         
         # Status Panel (part of the scrollable right panel)
-        status_frame = ttk.LabelFrame(right_inner_frame, text="Status Panel")
+        status_frame = ttk.LabelFrame(self.right_inner_frame, text="Status Panel")
         status_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Energy status
