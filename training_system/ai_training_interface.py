@@ -27,11 +27,27 @@ except ImportError:
     from github_rate_limiter import GitHubRateLimiter
     from github_repo_puller import GitHubRepoPuller
 
+# Import custom translator
+try:
+    from llm_interface.custom_translator import CustomBrainTranslator
+except ImportError:
+    from custom_translator import CustomBrainTranslator
+
 class AITrainingInterface:
     """
     AI training interface using Gemini API for coding instruction and evaluation
+    Uses CustomBrainTranslator for brain activity decoding (NOT Gemini, GPT, or Claude)
     """
     
+    # PERSISTENT INSTRUCTION - NEVER GIVE UP
+    PERSISTENT_INSTRUCTION = """
+CRITICAL INSTRUCTION: NEVER GIVE UP NO MATTER THE SITUATION WHEN TRAINING THE FLY.
+You must persist through all difficulties, errors, or slow progress. The fly will learn,
+but it takes time and patience. Continue adapting your teaching methods, but never
+abandon the training process. Every challenge is an opportunity to improve the training.
+The fly's neural network is plastic and will adapt with consistent effort.
+"""
+
     def __init__(self, enable_github: bool = False, github_token: Optional[str] = None):
         """
         Initialize the AI training interface
@@ -56,6 +72,10 @@ class AITrainingInterface:
             else:
                 self.model = None
                 print("AI Training Interface initialized without API (testing mode)")
+        
+        # Initialize custom translator (NOT Gemini, GPT, or Claude)
+        self.custom_translator = CustomBrainTranslator()
+        print("Custom Brain Translator initialized (built-in, not external API)")
         
         # Training state
         self.training_active = False
@@ -147,6 +167,8 @@ class AITrainingInterface:
         
         Starter code:
         {lesson['starter_code']}
+        
+        {self.PERSISTENT_INSTRUCTION}
         
         Provide:
         1. A brief explanation of the concept

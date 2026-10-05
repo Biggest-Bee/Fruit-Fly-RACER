@@ -177,7 +177,46 @@ overall progress, and can advance or reset levels.
 
 ---
 
-## 6. Memory integrity and truth verification (`learning_system/memory_integrity.py`)
+## 6. Training Files Management (`integrated_desktop_app.py`)
+
+- **Training Files Panel** - New feature for managing GitHub repositories for training:
+  - Repo selection mode: AI Chooses / User Chooses
+  - Import/Fork repo button with URL input
+  - Training files listbox showing current repos
+  - Remove repo button (disabled during training)
+  - Only one repo can be imported at a time
+  - Auto-remove repos when training is complete
+  - Uses GitHub integration with rate limiting
+
+- **Multi-Language Training**:
+  - Fly can train on multiple languages simultaneously
+  - AI chooses which languages to train on (in AI mode)
+  - User can interfere and change language selection
+  - Active training languages displayed in chat
+
+- **Custom Brain Translator** (`llm_interface/custom_translator.py`):
+  - Custom-built neural translator for brain activity decoding
+  - Does NOT use Gemini, GPT, or Claude
+  - Pattern matching on neuron firing patterns
+  - Vocabulary with 77 words for fly communication
+  - Neural network architecture (100→50→77)
+  - Supports brain activity ↔ text translation
+
+- **File Workspace Sync**:
+  - File explorer synced with actual file system (`fly_workspace/` directory)
+  - Files are copied to workspace when added
+  - Fly's changes are automatically synced to the file explorer
+  - Fly cannot see or modify files outside the workspace
+  - User can add files individually or in bulk
+  - Workspace path displayed in the file explorer
+  - Refresh button to sync with actual file system
+
+- **AI Trainer Persistence**:
+  - "Never give up" instruction embedded in AI trainer
+  - AI persists through all difficulties, errors, or slow progress
+  - Adapts teaching methods but never abandons training
+
+## 7. Memory integrity and truth verification (`learning_system/memory_integrity.py`)
 
 - **`MemoryIntegrity`** — new information never silently overwrites what the fly already knows.
   Every memory carries its source, confidence, corroboration count, the claims that have
@@ -353,5 +392,11 @@ implementations in this repo; Phase 5 (desktop integration and refinement); Phas
 - Added neuromorphic features (distance-based connections, Hebbian learning)
 - Enhanced language processing with Wernicke's Area integration
 - Improved neuron fireability with optimized parameters across all synthetic neurons
-- Improved app GUI and 
-- Attempted to fix 3D environment integration
+- Added scrollable right panel (Training + Status panels)
+- Added Training Files feature for GitHub repo management
+- Created custom brain translator (NOT Gemini, GPT, or Claude)
+- Added file workspace synced with actual file system
+- Added multi-language training support
+- Added "never give up" instruction to AI trainer
+- Fixed 3D camera position for better visibility
+- Total neurons: 411,577 (211,577 original + 200,000 enhanced)

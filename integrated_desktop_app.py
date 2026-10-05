@@ -36,6 +36,9 @@ class FullDesktopAppWith3D:
         self.three_d_running = False
         self.training_repos = []  # List of training repos
         self.training_active = False
+        self.file_workspace = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fly_workspace")
+        os.makedirs(self.file_workspace, exist_ok=True)  # Create workspace directory
+        self.active_training_languages = []  # List of languages currently being trained
         
         # Backend systems
         self.training_coordinator = None
@@ -239,15 +242,22 @@ class FullDesktopAppWith3D:
         self.three_d_canvas.create_text(300, 400, text="Click 'Launch 3D Environment' for real 3D", fill="yellow")
     
     def create_file_explorer(self):
-        """Create file explorer in left panel"""
+        """Create file explorer in left panel - synced with actual file system"""
         print("DEBUG: Creating file explorer...")
         
         file_frame = ttk.LabelFrame(self.left_paned, text="File Explorer")
         self.left_paned.add(file_frame, weight=1)
         
+        # Workspace path display
+        workspace_frame = ttk.Frame(file_frame)
+        workspace_frame.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(workspace_frame, text="Workspace:", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(workspace_frame, text=self.file_workspace, font=("Arial", 8, "italic")).pack(side=tk.LEFT, padx=5)
+        
         # File list
         self.file_listbox = tk.Listbox(file_frame, height=10)
         self.file_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
         
         # Code editor area
         self.code_editor = scrolledtext.ScrolledText(file_frame, height=8, wrap=tk.NONE)
@@ -258,9 +268,14 @@ class FullDesktopAppWith3D:
         file_button_frame.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Button(file_button_frame, text="Add File", command=self.add_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_button_frame, text="Add Multiple", command=self.add_multiple_files).pack(side=tk.LEFT, padx=2)
         ttk.Button(file_button_frame, text="Create File", command=self.create_file).pack(side=tk.LEFT, padx=2)
         ttk.Button(file_button_frame, text="Run Code", command=self.run_code).pack(side=tk.LEFT, padx=2)
         ttk.Button(file_button_frame, text="Remove", command=self.remove_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_button_frame, text="Refresh", command=self.refresh_file_list).pack(side=tk.LEFT, padx=2)
+        
+        # Load initial files
+        self.refresh_file_list()
         
         print("DEBUG: File explorer created")
     
@@ -481,7 +496,7 @@ class FullDesktopAppWith3D:
         self.add_chat_message("System", "3D view reset")
     
     def import_repo(self):
-        """Import/fork a GitHub repo into training files"""
+        """Import/fork a GitHub repo into training files (one at a time)"""
         if self.training_active:
             self.add_chat_message("System", "Cannot import repos during training. Stop training first.")
             return
@@ -495,6 +510,11 @@ class FullDesktopAppWith3D:
             self.add_chat_message("System", "This repo is already in training files")
             return
         
+        # Only one repo at a time
+        if len(self.training_repos) > 0:
+            self.add_chat_message("System", "Only one repo can be imported at a time. Remove current repo first.")
+            return
+        
         try:
             if self.backend_loaded and self.training_coordinator:
                 # Use GitHub integration to pull repo
@@ -504,6 +524,7 @@ class FullDesktopAppWith3D:
                     self.training_files_listbox.insert(tk.END, repo_url)
                     self.add_chat_message("System", f"Successfully imported: {repo_url}")
                     self.add_chat_message("System", f"Repo cloned to: {result.get('path', 'github_repos')}")
+                    self.repo_url_var.set("")  # Clear input
                 else:
                     self.add_chat_message("System", f"Failed to import: {result.get('error', 'Unknown error')}")
             else:
@@ -535,6 +556,23 @@ class FullDesktopAppWith3D:
             self.add_chat_message("System", f"Removed: {repo_url}")
         except Exception as e:
             self.add_chat_message("System", f"Error removing repo: {e}")
+    
+    def auto_remove_completed_repo(self, repo_url: str):
+        """Auto-remove repo when training on it is complete"""
+        try:
+            if repo_url in self.training_repos:
+                if self.backend_loaded and self.training_coordinator:
+                    self.training_coordinator.ai_trainer.cleanup_github_repo(repo_url)
+                
+                self.training_repos.remove(repo_url)
+                # Update listbox
+                self.training_files_listbox.delete(0, tk.END)
+                for repo in self.training_repos:
+                    self.training_files_listbox.insert(tk.END, repo)
+                
+                self.add_chat_message("System", f"Auto-removed completed repo: {repo_url}")
+        except Exception as e:
+            self.add_chat_message("System", f"Error auto-removing repo: {e}")
     
     def start_backend_loading(self):
         """Start loading backend systems in background"""
@@ -616,28 +654,91 @@ class FullDesktopAppWith3D:
     
     # File Methods
     def add_file(self):
-        """Add file to viewable list"""
+        """Add file to workspace - copies file to fly workspace"""
         file_path = filedialog.askopenfilename()
         if file_path:
-            self.viewable_files.add(file_path)
-            self.file_listbox.insert(tk.END, os.path.basename(file_path))
-            self.add_chat_message("System", f"Added file: {os.path.basename(file_path)}")
+            try:
+                # Copy file to workspace
+                filename = os.path.basename(file_path)
+                workspace_path = os.path.join(self.file_workspace, filename)
+                
+                # Read original file
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Write to workspace
+                with open(workspace_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.viewable_files.add(workspace_path)
+                self.refresh_file_list()
+                self.add_chat_message("System", f"Added file to workspace: {filename}")
+            except Exception as e:
+                self.add_chat_message("System", f"Error adding file: {e}")
+    
+    def add_multiple_files(self):
+        """Add multiple files to workspace"""
+        file_paths = filedialog.askopenfilenames()
+        if file_paths:
+            added_count = 0
+            for file_path in file_paths:
+                try:
+                    filename = os.path.basename(file_path)
+                    workspace_path = os.path.join(self.file_workspace, filename)
+                    
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    with open(workspace_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    
+                    self.viewable_files.add(workspace_path)
+                    added_count += 1
+                except Exception as e:
+                    self.add_chat_message("System", f"Error adding {os.path.basename(file_path)}: {e}")
+            
+            self.refresh_file_list()
+            self.add_chat_message("System", f"Added {added_count} files to workspace")
     
     def create_file(self):
-        """Create new file"""
-        file_path = filedialog.asksaveasfilename(defaultextension=".py")
+        """Create new file in workspace"""
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.file_workspace,
+            defaultextension=".py"
+        )
         if file_path:
-            self.created_files.add(file_path)
-            self.viewable_files.add(file_path)
-            self.file_listbox.insert(tk.END, os.path.basename(file_path))
-            self.add_chat_message("System", f"Created file: {os.path.basename(file_path)}")
+            try:
+                # Create empty file
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write("")
+                
+                self.created_files.add(file_path)
+                self.viewable_files.add(file_path)
+                self.refresh_file_list()
+                self.add_chat_message("System", f"Created file: {os.path.basename(file_path)}")
+            except Exception as e:
+                self.add_chat_message("System", f"Error creating file: {e}")
     
     def run_code(self):
-        """Run code in the editor"""
+        """Run code in the editor - saves to workspace first"""
         code = self.code_editor.get(1.0, tk.END).strip()
         if not code:
             self.add_chat_message("System", "No code to run")
             return
+        
+        # Save current file if selected
+        selection = self.file_listbox.curselection()
+        if selection:
+            index = selection[0]
+            filename = self.file_listbox.get(index)
+            workspace_path = os.path.join(self.file_workspace, filename)
+            
+            try:
+                with open(workspace_path, 'w', encoding='utf-8') as f:
+                    f.write(code)
+                self.add_chat_message("System", f"Saved {filename}")
+            except Exception as e:
+                self.add_chat_message("System", f"Error saving file: {e}")
         
         language = self.language_var.get()
         self.add_chat_message("System", f"Running {language} code...")
@@ -654,12 +755,51 @@ class FullDesktopAppWith3D:
             # Would integrate with training coordinator here
     
     def remove_file(self):
-        """Remove file from viewable list"""
+        """Remove file from workspace"""
         selection = self.file_listbox.curselection()
         if selection:
             index = selection[0]
-            self.file_listbox.delete(index)
-            self.add_chat_message("System", "File removed")
+            filename = self.file_listbox.get(index)
+            workspace_path = os.path.join(self.file_workspace, filename)
+            
+            try:
+                # Delete from workspace
+                if os.path.exists(workspace_path):
+                    os.remove(workspace_path)
+                
+                self.viewable_files.discard(workspace_path)
+                self.refresh_file_list()
+                self.add_chat_message("System", f"Removed: {filename}")
+            except Exception as e:
+                self.add_chat_message("System", f"Error removing file: {e}")
+    
+    def refresh_file_list(self):
+        """Refresh file list from workspace"""
+        self.file_listbox.delete(0, tk.END)
+        
+        if os.path.exists(self.file_workspace):
+            files = [f for f in os.listdir(self.file_workspace) if os.path.isfile(os.path.join(self.file_workspace, f))]
+            for filename in sorted(files):
+                self.file_listbox.insert(tk.END, filename)
+                self.viewable_files.add(os.path.join(self.file_workspace, filename))
+    
+    def on_file_select(self, event):
+        """Handle file selection - load file content into editor"""
+        selection = self.file_listbox.curselection()
+        if selection:
+            index = selection[0]
+            filename = self.file_listbox.get(index)
+            workspace_path = os.path.join(self.file_workspace, filename)
+            
+            try:
+                with open(workspace_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                self.code_editor.delete(1.0, tk.END)
+                self.code_editor.insert(1.0, content)
+                self.current_file = workspace_path
+            except Exception as e:
+                self.add_chat_message("System", f"Error loading file: {e}")
     
     def new_file(self):
         """New file from menu"""
@@ -675,25 +815,47 @@ class FullDesktopAppWith3D:
     
     # Training Methods
     def start_training(self):
-        """Start training"""
+        """Start training - supports multiple languages"""
         if not self.backend_loaded:
             self.add_chat_message("System", "Wait for backend to load...")
             return
-            
+        
         language = self.language_var.get()
         level = self.level_var.get()
+        
+        # Add to active training languages if not already there
+        if language not in self.active_training_languages:
+            self.active_training_languages.append(language)
+        
         self.add_chat_message("System", f"Starting training in {language} ({level})")
+        self.add_chat_message("System", f"Active training languages: {', '.join(self.active_training_languages)}")
         self.progress_label.config(text=f"Training {language}...")
         self.start_training_button.config(state='disabled')
         self.stop_training_button.config(state='normal')
         self.remove_repo_button.config(state='disabled')
         self.training_active = True
         
+        # If AI mode, let AI choose next language
+        if self.repo_mode_var.get() == "ai" and len(self.active_training_languages) < 3:
+            self.ai_choose_next_language()
+        
         # Simulate training progress
         self.root.after(2000, lambda: self.progress_label.config(text=f"Training {language} - 25%"))
         self.root.after(4000, lambda: self.progress_label.config(text=f"Training {language} - 50%"))
         self.root.after(6000, lambda: self.progress_label.config(text=f"Training {language} - 75%"))
         self.root.after(8000, lambda: self.progress_label.config(text=f"Training {language} - Complete"))
+    
+    def ai_choose_next_language(self):
+        """AI chooses next language to train on"""
+        all_languages = ["python", "typescript", "javascript", "rust", "c++", "c#", "go", "java", "swift", "kotlin", "php", "ruby", "sql", "css", "html", "json", "graphql", "toml", "yaml", "ini", "xml_rpc", "soap", "protobuf", "avro", "msgpack", "cbor", "bson"]
+        
+        # Choose a language not currently being trained
+        available = [lang for lang in all_languages if lang not in self.active_training_languages]
+        
+        if available:
+            next_lang = available[0]  # Simple selection - could be smarter
+            self.language_var.set(next_lang)
+            self.add_chat_message("System", f"AI selected next language: {next_lang}")
     
     def stop_training(self):
         """Stop training"""
@@ -703,6 +865,7 @@ class FullDesktopAppWith3D:
         self.stop_training_button.config(state='disabled')
         self.remove_repo_button.config(state='normal')
         self.training_active = False
+        self.active_training_languages = []  # Clear active languages
     
     def get_hint(self):
         """Get training hint"""
