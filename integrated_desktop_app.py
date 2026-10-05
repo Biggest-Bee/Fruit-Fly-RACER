@@ -600,7 +600,8 @@ class FullDesktopAppWith3D:
             self.root.after(0, self.backend_loading_complete)
             
         except Exception as e:
-            self.root.after(0, lambda: self.backend_loading_error(str(e)))
+            error_msg = str(e)
+            self.root.after(0, lambda: self.backend_loading_error(error_msg))
     
     def backend_loading_complete(self):
         """Called when backend loading is complete"""
