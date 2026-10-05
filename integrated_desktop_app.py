@@ -34,6 +34,8 @@ class FullDesktopAppWith3D:
         self.backend_loaded = False
         self.three_d_process = None
         self.three_d_running = False
+        self.training_repos = []  # List of training repos
+        self.training_active = False
         
         # Backend systems
         self.training_coordinator = None
@@ -266,8 +268,30 @@ class FullDesktopAppWith3D:
         """Create training panel in right panel"""
         print("DEBUG: Creating training panel...")
         
-        training_frame = ttk.LabelFrame(self.right_paned, text="Training Panel")
-        self.right_paned.add(training_frame, weight=2)
+        # Create scrollable container for right panel
+        right_scroll_frame = ttk.Frame(self.right_paned)
+        self.right_paned.add(right_scroll_frame, weight=1)
+        
+        # Scrollbar
+        right_scrollbar = ttk.Scrollbar(right_scroll_frame, orient="vertical")
+        right_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Scrollable canvas
+        right_canvas = tk.Canvas(right_scroll_frame, yscrollcommand=right_scrollbar.set)
+        right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        right_scrollbar.config(command=right_canvas.yview)
+        
+        # Frame inside canvas
+        right_inner_frame = ttk.Frame(right_canvas)
+        right_canvas.create_window((0, 0), window=right_inner_frame, anchor="nw")
+        
+        # Configure scroll
+        right_inner_frame.bind("<Configure>", lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
+        
+        # Training Panel
+        training_frame = ttk.LabelFrame(right_inner_frame, text="Training Panel")
+        training_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Language selection
         ttk.Label(training_frame, text="Language:").pack(anchor=tk.W, padx=5, pady=(5, 0))
@@ -308,14 +332,43 @@ class FullDesktopAppWith3D:
         self.language_progress_label = ttk.Label(training_frame, text="0/27 languages mastered")
         self.language_progress_label.pack(anchor=tk.W, padx=5, pady=5)
         
+        # Training Files Panel (NEW)
+        training_files_frame = ttk.LabelFrame(right_inner_frame, text="Training Files")
+        training_files_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Mode selection
+        ttk.Label(training_files_frame, text="Repo Selection Mode:").pack(anchor=tk.W, padx=5, pady=(5, 0))
+        self.repo_mode_var = tk.StringVar(value="ai")
+        mode_frame = ttk.Frame(training_files_frame)
+        mode_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Radiobutton(mode_frame, text="AI Chooses", variable=self.repo_mode_var, value="ai").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(mode_frame, text="User Chooses", variable=self.repo_mode_var, value="user").pack(side=tk.LEFT, padx=5)
+        
+        # Import repo button
+        import_frame = ttk.Frame(training_files_frame)
+        import_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.repo_url_var = tk.StringVar()
+        ttk.Button(import_frame, text="Import/Fork Repo", command=self.import_repo).pack(side=tk.LEFT, padx=2)
+        ttk.Entry(import_frame, textvariable=self.repo_url_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        
+        # Training files list
+        ttk.Label(training_files_frame, text="Current Training Repos:").pack(anchor=tk.W, padx=5, pady=(5, 0))
+        self.training_files_listbox = tk.Listbox(training_files_frame, height=5)
+        self.training_files_listbox.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Remove repo button
+        self.remove_repo_button = ttk.Button(training_files_frame, text="Remove Selected Repo", command=self.remove_training_repo)
+        self.remove_repo_button.pack(fill=tk.X, padx=5, pady=5)
+        
         print("DEBUG: Training panel created")
     
     def create_status_panel(self):
         """Create status panel in right panel"""
         print("DEBUG: Creating status panel...")
         
-        status_frame = ttk.LabelFrame(self.right_paned, text="Status Panel")
-        self.right_paned.add(status_frame, weight=1)
+        # Status Panel (part of the scrollable right panel)
+        status_frame = ttk.LabelFrame(right_inner_frame, text="Status Panel")
+        status_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Energy status
         ttk.Label(status_frame, text="Energy:").pack(anchor=tk.W, padx=5, pady=(5, 0))
@@ -341,6 +394,11 @@ class FullDesktopAppWith3D:
         ttk.Label(status_frame, text="3D Environment:").pack(anchor=tk.W, padx=5, pady=(10, 0))
         self.three_d_status_label = ttk.Label(status_frame, text="Not launched", foreground="gray")
         self.three_d_status_label.pack(anchor=tk.W, padx=5, pady=5)
+        
+        # Total neurons
+        ttk.Label(status_frame, text="Total Neurons:").pack(anchor=tk.W, padx=5, pady=(5, 0))
+        self.neurons_label = ttk.Label(status_frame, text="411,577")
+        self.neurons_label.pack(anchor=tk.W, padx=5, pady=5)
         
         # Backend status
         ttk.Label(status_frame, text="Backend:").pack(anchor=tk.W, padx=5, pady=(5, 0))
@@ -421,6 +479,62 @@ class FullDesktopAppWith3D:
         """Reset 3D view"""
         self.draw_placeholder_3d()
         self.add_chat_message("System", "3D view reset")
+    
+    def import_repo(self):
+        """Import/fork a GitHub repo into training files"""
+        if self.training_active:
+            self.add_chat_message("System", "Cannot import repos during training. Stop training first.")
+            return
+        
+        repo_url = self.repo_url_var.get().strip()
+        if not repo_url:
+            self.add_chat_message("System", "Please enter a GitHub repository URL")
+            return
+        
+        if repo_url in self.training_repos:
+            self.add_chat_message("System", "This repo is already in training files")
+            return
+        
+        try:
+            if self.backend_loaded and self.training_coordinator:
+                # Use GitHub integration to pull repo
+                result = self.training_coordinator.ai_trainer.pull_github_repository(repo_url)
+                if result.get("success"):
+                    self.training_repos.append(repo_url)
+                    self.training_files_listbox.insert(tk.END, repo_url)
+                    self.add_chat_message("System", f"Successfully imported: {repo_url}")
+                    self.add_chat_message("System", f"Repo cloned to: {result.get('path', 'github_repos')}")
+                else:
+                    self.add_chat_message("System", f"Failed to import: {result.get('error', 'Unknown error')}")
+            else:
+                self.add_chat_message("System", "Backend not loaded. Wait for backend to load.")
+        except Exception as e:
+            self.add_chat_message("System", f"Error importing repo: {e}")
+    
+    def remove_training_repo(self):
+        """Remove selected repo from training files"""
+        if self.training_active:
+            self.add_chat_message("System", "Cannot remove repos during training. Stop training first.")
+            return
+        
+        selection = self.training_files_listbox.curselection()
+        if not selection:
+            self.add_chat_message("System", "Please select a repo to remove")
+            return
+        
+        index = selection[0]
+        repo_url = self.training_files_listbox.get(index)
+        
+        try:
+            if self.backend_loaded and self.training_coordinator:
+                # Cleanup repo
+                self.training_coordinator.ai_trainer.cleanup_github_repo(repo_url)
+            
+            self.training_repos.remove(repo_url)
+            self.training_files_listbox.delete(index)
+            self.add_chat_message("System", f"Removed: {repo_url}")
+        except Exception as e:
+            self.add_chat_message("System", f"Error removing repo: {e}")
     
     def start_backend_loading(self):
         """Start loading backend systems in background"""
@@ -572,6 +686,8 @@ class FullDesktopAppWith3D:
         self.progress_label.config(text=f"Training {language}...")
         self.start_training_button.config(state='disabled')
         self.stop_training_button.config(state='normal')
+        self.remove_repo_button.config(state='disabled')
+        self.training_active = True
         
         # Simulate training progress
         self.root.after(2000, lambda: self.progress_label.config(text=f"Training {language} - 25%"))
@@ -585,6 +701,8 @@ class FullDesktopAppWith3D:
         self.progress_label.config(text="Training stopped")
         self.start_training_button.config(state='normal')
         self.stop_training_button.config(state='disabled')
+        self.remove_repo_button.config(state='normal')
+        self.training_active = False
     
     def get_hint(self):
         """Get training hint"""
