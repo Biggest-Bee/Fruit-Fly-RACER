@@ -31,7 +31,11 @@ except ImportError:
 try:
     from llm_interface.custom_translator import CustomBrainTranslator
 except ImportError:
-    from custom_translator import CustomBrainTranslator
+    try:
+        from custom_translator import CustomBrainTranslator
+    except ImportError:
+        print("Warning: Custom translator not available")
+        CustomBrainTranslator = None
 
 class AITrainingInterface:
     """
@@ -74,8 +78,12 @@ The fly's neural network is plastic and will adapt with consistent effort.
                 print("AI Training Interface initialized without API (testing mode)")
         
         # Initialize custom translator (NOT Gemini, GPT, or Claude)
-        self.custom_translator = CustomBrainTranslator()
-        print("Custom Brain Translator initialized (built-in, not external API)")
+        if CustomBrainTranslator:
+            self.custom_translator = CustomBrainTranslator()
+            print("Custom Brain Translator initialized (built-in, not external API)")
+        else:
+            self.custom_translator = None
+            print("Custom Brain Translator not available")
         
         # Training state
         self.training_active = False

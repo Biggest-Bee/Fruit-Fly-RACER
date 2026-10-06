@@ -80,20 +80,51 @@ def run():
         food_entities.append(Entity(model='sphere', scale=1.0, color=color.red,
                                     position=(x, z, y)))
 
-    # --------------------------------------------------------------------- fly
-    fly = Entity(model='sphere', scale=(0.8, 0.35, 0.45), color=color.rgb(90, 60, 40))
-    Entity(model='sphere', scale=(0.35, 0.8, 0.8), color=color.dark_gray,
-           position=(0.55, 0.15, 0), parent=fly)
-    Entity(model='sphere', scale=(0.18, 0.4, 0.4), color=color.red,
-           position=(0.75, 0.2, 0.35), parent=fly)
-    Entity(model='sphere', scale=(0.18, 0.4, 0.4), color=color.red,
-           position=(0.75, 0.2, -0.35), parent=fly)
-    left_wing = Entity(model='cube', scale=(0.7, 0.05, 1.6),
+    # --------------------------------------------------------------------- fly (3D model with legs and wings)
+    # Body
+    fly_body = Entity(model='sphere', scale=(0.8, 0.35, 0.45), color=color.rgb(90, 60, 40))
+    
+    # Head with eyes
+    fly_head = Entity(model='sphere', scale=(0.35, 0.8, 0.8), color=color.dark_gray,
+                    position=(0.55, 0.15, 0), parent=fly_body)
+    
+    # Eyes (compound eyes - 3D spheres)
+    left_eye = Entity(model='sphere', scale=(0.15, 0.15, 0.15), color=color.red,
+                    position=(0.65, 0.1, 0.15), parent=fly_head)
+    right_eye = Entity(model='sphere', scale=(0.15, 0.15, 0.15), color=color.red,
+                     position=(0.65, 0.1, -0.15), parent=fly_head)
+    
+    # Thorax
+    fly_thorax = Entity(model='sphere', scale=(0.5, 0.3, 0.3), color=color.rgb(100, 70, 50),
+                       position=(-0.1, 0.05, 0), parent=fly_body)
+    
+    # Wings (3D with thickness)
+    left_wing = Entity(model='cube', scale=(0.7, 0.1, 1.6),
                        color=color.rgba(200, 230, 255, 140),
-                       position=(-0.1, 0.35, 0.9), parent=fly)
-    right_wing = Entity(model='cube', scale=(0.7, 0.05, 1.6),
+                       position=(-0.2, 0.35, 0.9), parent=fly_thorax)
+    right_wing = Entity(model='cube', scale=(0.7, 0.1, 1.6),
                         color=color.rgba(200, 230, 255, 140),
-                        position=(-0.1, 0.35, -0.9), parent=fly)
+                        position=(-0.2, 0.35, -0.9), parent=fly_thorax)
+    
+    # Legs (6 legs with segments)
+    leg_positions = [
+        (0.2, -0.2, 0.3),   # Front left
+        (0.2, -0.2, -0.3),  # Front right
+        (0.0, -0.25, 0.35),  # Middle left
+        (0.0, -0.25, -0.35), # Middle right
+        (-0.2, -0.2, 0.3),  # Back left
+        (-0.2, -0.2, -0.3), # Back right
+    ]
+    
+    legs = []
+    for i, pos in enumerate(leg_positions):
+        leg = Entity(model='cylinder', scale=(0.05, 0.4, 0.05),
+                     color=color.dark_gray,
+                     position=pos, parent=fly_body)
+        legs.append(leg)
+    
+    # Combine all fly parts
+    fly = fly_body
 
     # ---------------------------------------------------------------- free cam
     camera.position = (0, ROOM_HEIGHT * 0.8, -ROOM_SIZE * 0.5)
@@ -126,6 +157,12 @@ def run():
         flap = math.sin(state["wing_beat_phase"]) * 55.0
         left_wing.rotation_x = flap
         right_wing.rotation_x = -flap
+        
+        # Animate legs based on movement
+        speed = state["speed"]
+        for i, leg in enumerate(legs):
+            leg_angle = math.sin(time.time() * 10 + i) * min(speed * 0.1, 0.5)
+            leg.rotation_z = leg_angle
 
         for entity, source in zip(food_entities, food_sources):
             fraction = source["amount"] / FOOD_CAPACITY

@@ -30,10 +30,15 @@ class FlyCharacter:
         self.roll = 0.0  # Rotation around X axis
         
         # Flight characteristics
-        self.max_speed = 15.0  # units per second
-        self.max_acceleration = 30.0  # units per second squared
-        self.turn_rate = 5.0  # radians per second
+        self.max_speed = 8.0  # units per second (reduced from 15.0)
+        self.max_acceleration = 20.0  # units per second squared (reduced from 30.0)
+        self.turn_rate = 3.0  # radians per second (reduced from 5.0)
         self.mass = 1.0  # arbitrary mass units
+        
+        # Box constraints (from ROOM_SIZE in real_3d_environment.py)
+        # ROOM_SIZE = 20.0, ROOM_HEIGHT = 12.0
+        self.box_min = np.array([-10.0, -10.0, 0.0])  # Minimum bounds (centered)
+        self.box_max = np.array([10.0, 10.0, 12.0])  # Maximum bounds (centered)
         
         # Wing beat frequency (for animation and sound)
         self.wing_beat_frequency = 200.0  # Hz (typical for fruit flies)
@@ -110,6 +115,14 @@ class FlyCharacter:
         
         # Update position
         self.position += self.velocity * dt
+        
+        # Constrain to box bounds
+        self.position = np.clip(self.position, self.box_min, self.box_max)
+        
+        # Bounce off walls (reverse velocity component if hitting wall)
+        for i in range(3):
+            if self.position[i] <= self.box_min[i] or self.position[i] >= self.box_max[i]:
+                self.velocity[i] *= -0.5  # Bounce with energy loss
         
         # Update wing beat phase
         self.wing_beat_phase += self.wing_beat_frequency * dt * 2 * math.pi

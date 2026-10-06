@@ -615,6 +615,8 @@ class FullDesktopAppWith3D:
     def backend_loading_error(self, error):
         """Called when backend loading fails"""
         print(f"DEBUG: Backend loading error: {error}")
+        import traceback
+        traceback.print_exc()
         self.backend_status_label.config(text="Backend Error", foreground="red")
         self.add_chat_message("System", f"Error loading backend: {error}")
     
