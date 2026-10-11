@@ -1,11 +1,7 @@
-# Fruit Fly AI Project Plan
+# Fruit Fly Racer Project Plan
 
 ## Project Overview
-Building an AI system based on the MaleCNS v1.0 fruit fly connectome that can:
-- Communicate with users via natural language
-- Navigate a 3D environment
-- Learn to code in multiple programming languages
-- Function as a desktop application
+Building a racing simulation featuring a virtual fruit fly driven by a scanned connectome-inspired neural model, navigating through a challenging 3D obstacle tunnel with dynamic wind and strict physics limits.
 
 ## Phase 1: Brain Interface Architecture
 
