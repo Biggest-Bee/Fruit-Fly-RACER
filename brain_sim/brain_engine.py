@@ -17,16 +17,21 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 try:
     from .neuron_models import NeuronPopulation
     from .synapse_models import SynapticConnectivity
-    from .enhanced_human_regions import EnhancedHumanBrainIntegration
 except ImportError:
     from neuron_models import NeuronPopulation
     from synapse_models import SynapticConnectivity
-    from enhanced_human_regions import EnhancedHumanBrainIntegration
 
+# Enhanced regions are optional (removed in racing simulation)
+try:
+    from .enhanced_human_regions import EnhancedHumanBrainIntegration
+except ImportError:
+    EnhancedHumanBrainIntegration = None
+
+# Translator is optional (removed in racing simulation)
 try:
     from llm_interface.translator import BrainTranslator
 except ImportError:
-    from translator import BrainTranslator
+    BrainTranslator = None
 
 
 class BrainEngine:
@@ -35,17 +40,17 @@ class BrainEngine:
     Coordinates neural activity and synaptic transmission
     """
     
-    def __init__(self, annotations_file: str, connectome_file: str, 
+    def __init__(self, annotations_file: str = None, connectome_file: str = None, 
                  max_neurons: Optional[int] = None, max_synapses: Optional[int] = None,
-                 enable_enhanced_regions: bool = True,
+                 enable_enhanced_regions: bool = False,
                  prefrontal_neurons: int = 100000,
                  wernicke_neurons: int = 100000):
         """
         Initialize the brain simulation engine
         
         Args:
-            annotations_file: Path to neuron annotations file
-            connectome_file: Path to connectome weights file
+            annotations_file: Path to neuron annotations file (optional)
+            connectome_file: Path to connectome weights file (optional)
             max_neurons: Maximum number of neurons to load (for testing)
             max_synapses: Maximum number of synapses to load (for testing)
             enable_enhanced_regions: Whether to enable enhanced human-like brain regions
@@ -55,15 +60,23 @@ class BrainEngine:
         print("Initializing Brain Engine...")
         self.start_time = time.time()
         
-        # Load neuron population
-        self.neuron_population = NeuronPopulation(annotations_file)
+        # Load neuron population (if files provided)
+        if annotations_file and os.path.exists(annotations_file):
+            self.neuron_population = NeuronPopulation(annotations_file, max_neurons=max_neurons)
+        else:
+            print("No annotations file provided, using empty neuron population")
+            self.neuron_population = None
         
-        # Load synaptic connectivity
-        self.synaptic_connectivity = SynapticConnectivity(connectome_file, max_synapses)
+        # Load synaptic connectivity (if files provided)
+        if connectome_file and os.path.exists(connectome_file):
+            self.synaptic_connectivity = SynapticConnectivity(connectome_file, max_synapses)
+        else:
+            print("No connectome file provided, using empty synaptic connectivity")
+            self.synaptic_connectivity = None
         
-        # Initialize enhanced human-like brain regions
+        # Initialize enhanced human-like brain regions (optional)
         self.enable_enhanced_regions = enable_enhanced_regions
-        if enable_enhanced_regions:
+        if enable_enhanced_regions and EnhancedHumanBrainIntegration:
             self.enhanced_brain = EnhancedHumanBrainIntegration(
                 prefrontal_neurons=prefrontal_neurons,
                 wernicke_neurons=wernicke_neurons
@@ -74,13 +87,14 @@ class BrainEngine:
         else:
             self.enhanced_brain = None
         
-        # Initialize brain translator (will be connected if API key is available)
+        # Initialize brain translator (optional, removed in racing simulation)
         self.brain_translator = None
-        try:
-            self.brain_translator = BrainTranslator(enable_wernicke=enable_enhanced_regions)
-            print("Brain translator connected to brain engine")
-        except Exception as e:
-            print(f"Brain translator not available: {e}")
+        if BrainTranslator:
+            try:
+                self.brain_translator = BrainTranslator(enable_wernicke=enable_enhanced_regions)
+                print("Brain translator connected to brain engine")
+            except Exception as e:
+                print(f"Brain translator not available: {e}")
         
         # Simulation state
         self.current_time = 0.0
