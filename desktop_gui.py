@@ -41,8 +41,6 @@ class FruitFlyRacerGUI:
         self.create_layout()
         self.create_control_panel()
         self.create_status_panel()
-        self.create_3d_panel()
-        self.create_log_panel()
         
         # Initialize 3D visualization (generate initial obstacles)
         self.sample_obstacles = []
@@ -50,6 +48,10 @@ class FruitFlyRacerGUI:
         
         # Generate sample obstacles for visualization
         self.generate_sample_obstacles()
+        
+        # Now create 3D and log panels (they need self.right_panel)
+        self.create_3d_panel(self.right_panel)
+        self.create_log_panel(self.right_panel)
         
         # Draw initial 3D scene
         self.root.after(100, lambda: self.draw_3d_tunnel(self.sample_obstacles, self.sample_fly_position))
@@ -117,12 +119,6 @@ class FruitFlyRacerGUI:
         # Right panel (3D visualization and log)
         right_panel = ttk.Frame(main_frame)
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # 3D Visualization panel
-        self.create_3d_panel(right_panel)
-        
-        # Log panel
-        self.create_log_panel(right_panel)
         
         self.right_panel = right_panel
         
