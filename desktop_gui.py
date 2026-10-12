@@ -27,7 +27,7 @@ class FruitFlyRacerGUI:
         """
         self.root = root
         self.root.title("Fruit Fly Racer - 3D Obstacle Course Racing Simulation")
-        self.root.geometry("1200x800")
+        self.root.geometry("1400x900")
         
         # Simulation state
         self.simulation_running = False
@@ -41,9 +41,39 @@ class FruitFlyRacerGUI:
         self.create_layout()
         self.create_control_panel()
         self.create_status_panel()
+        self.create_3d_panel()
         self.create_log_panel()
         
-        print("GUI initialized")
+        # Initialize 3D visualization (generate initial obstacles)
+        self.sample_obstacles = []
+        self.sample_fly_position = np.array([0.0, 0.0, -50.0])
+        
+        # Generate sample obstacles for visualization
+        self.generate_sample_obstacles()
+        
+        # Draw initial 3D scene
+        self.root.after(100, lambda: self.draw_3d_tunnel(self.sample_obstacles, self.sample_fly_position))
+        
+        print("GUI initialized and ready")
+    
+    def generate_sample_obstacles(self):
+        """Generate sample obstacles for visualization"""
+        import random
+        for i in range(15):
+            z = random.uniform(-40, 40)
+            angle = random.uniform(0, 2 * math.pi)
+            radius = random.uniform(0, 4.0)
+            x = radius * math.cos(angle)
+            y = radius * math.sin(angle)
+            size = random.uniform(0.5, 2.0)
+            has_hole = random.random() < 0.5
+            
+            self.sample_obstacles.append({
+                'position': np.array([x, y, z]),
+                'size': size,
+                'type': random.choice(['cube', 'sphere', 'triangle']),
+                'has_hole': has_hole
+            })
     
     def create_menu(self):
         """Create menu bar"""
@@ -84,20 +114,17 @@ class FruitFlyRacerGUI:
         left_panel = ttk.Frame(main_frame, width=300)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         
-        # Right panel (log and visualization)
+        # Right panel (3D visualization and log)
         right_panel = ttk.Frame(main_frame)
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # 3D Visualization canvas
-        viz_frame = ttk.LabelFrame(right_panel, text="3D Visualization")
-        viz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        self.viz_canvas = Canvas(viz_frame, bg="black", height=400)
-        self.viz_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # 3D Visualization panel
+        self.create_3d_panel(right_panel)
         
         # Log panel
-        log_frame = ttk.LabelFrame(right_panel, text="Simulation Log")
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        self.create_log_panel(right_panel)
+        
+        self.right_panel = right_panel
         
         self.left_panel = left_panel
         self.right_panel = right_panel
@@ -151,9 +178,17 @@ class FruitFlyRacerGUI:
         self.status_label = ttk.Label(status_frame, text="Idle", foreground="gray")
         self.status_label.pack(anchor=tk.W, padx=5, pady=5)
     
-    def create_log_panel(self):
+    def create_3d_panel(self, parent):
+        """Create 3D visualization panel"""
+        viz_frame = ttk.LabelFrame(parent, text="3D Obstacle Tunnel Visualization")
+        viz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        self.viz_canvas = Canvas(viz_frame, bg="black", height=450)
+        self.viz_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    
+    def create_log_panel(self, parent):
         """Create log panel"""
-        log_frame = ttk.LabelFrame(self.right_panel, text="Simulation Log")
+        log_frame = ttk.LabelFrame(parent, text="Simulation Log")
         log_frame.pack(fill=tk.BOTH, expand=True)
         
         # Log text area
@@ -165,16 +200,27 @@ class FruitFlyRacerGUI:
         self.log_text.tag_config("success", foreground="green")
         self.log_text.tag_config("error", foreground="red")
         self.log_text.tag_config("warning", foreground="orange")
+        
+        # Initial message
+        self.log("Fruit Fly Racer Desktop Application Started", "success")
+        self.log("Click 'Start Simulation' to begin training", "info")
+        self.log("3D visualization showing sample obstacle course", "info")
     
     def draw_3d_tunnel(self, obstacles=None, fly_position=None):
         """
         Draw 3D tunnel visualization on canvas
         
         Args:
-            obstacles: List of obstacles to draw
-            fly_position: Current fly position
+            obstacles: List of obstacles to draw (uses sample if None)
+            fly_position: Current fly position (uses sample if None)
         """
         self.viz_canvas.delete("all")
+        
+        # Use sample obstacles if none provided
+        if obstacles is None:
+            obstacles = self.sample_obstacles
+        if fly_position is None:
+            fly_position = self.sample_fly_position
         
         # Canvas dimensions
         width = self.viz_canvas.winfo_width()
@@ -189,78 +235,191 @@ class FruitFlyRacerGUI:
         center_x = width / 2
         center_y = height / 2
         
-        # Draw tunnel walls (cylinder)
-        num_segments = 16
-        for z in [-50, 0, 50]:  # Draw at different depths
-            radius = 5.0
+        # Draw tunnel walls (cylinder with perspective)
+        num_segments = 20
+        tunnel_radius = 5.0
+        tunnel_length = 100.0
+        
+        # Draw multiple tunnel sections for depth effect
+        for z in np.linspace(-tunnel_length/2, tunnel_length/2, 10):
+            depth_scale = 1.0 + (z / tunnel_length) * 0.5  # Perspective scaling
+            current_radius = tunnel_radius * depth_scale
+            
             for i in range(num_segments):
                 angle = 2 * math.pi * i / num_segments
-                x = radius * math.cos(angle)
-                y = radius * math.sin(angle)
+                x = current_radius * math.cos(angle)
+                y = current_radius * math.sin(angle)
                 
                 # Simple perspective projection
                 proj_x = center_x + x * scale
-                proj_y = center_y + y * scale + z * 0.5
+                proj_y = center_y + y * scale + z * 2  # Z affects Y position for side view
                 
                 # Draw wall segment
                 next_angle = 2 * math.pi * (i + 1) / num_segments
-                next_x = radius * math.cos(next_angle)
-                next_y = radius * math.sin(next_angle)
+                next_x = current_radius * math.cos(next_angle)
+                next_y = current_radius * math.sin(next_angle)
                 next_proj_x = center_x + next_x * scale
-                next_proj_y = center_y + next_y * scale + z * 0.5
+                next_proj_y = center_y + next_y * scale + z * 2
                 
-                self.viz_canvas.create_line(proj_x, proj_y, next_proj_x, next_proj_y, fill="cyan", width=2)
+                # Color gradient based on depth
+                depth_color = int(100 + (z + tunnel_length/2) / tunnel_length * 100)
+                color = f"#{depth_color:02x}{depth_color:02x}{depth_color+50:02x}"
+                
+                self.viz_canvas.create_line(proj_x, proj_y, next_proj_x, next_proj_y, fill=color, width=2)
         
-        # Draw obstacles
+        # Draw obstacles with better visualization
         if obstacles:
-            for obs in obstacles[:10]:  # Draw first 10 obstacles
+            for obs in obstacles[:15]:  # Draw first 15 obstacles
                 ox, oy, oz = obs['position']
                 obs_size = obs['size']
                 
-                # Project obstacle position
-                proj_ox = center_x + ox * scale
-                proj_oy = center_y + oy * scale + oz * 0.5
+                # Perspective scaling based on depth
+                depth_scale = 1.0 + (oz / 100.0) * 0.5
+                scaled_size = obs_size * scale * depth_scale
                 
-                # Draw obstacle
+                # Project obstacle position
+                proj_ox = center_x + ox * scale * depth_scale
+                proj_oy = center_y + oy * scale * depth_scale + oz * 2
+                
+                # Draw obstacle based on type
                 color = "red" if obs['has_hole'] else "orange"
-                self.viz_canvas.create_oval(
-                    proj_ox - obs_size * scale,
-                    proj_oy - obs_size * scale,
-                    proj_ox + obs_size * scale,
-                    proj_oy + obs_size * scale,
-                    fill=color, outline="white"
-                )
+                outline = "white" if obs['has_hole'] else "yellow"
+                
+                if obs['type'] == 'cube':
+                    self.viz_canvas.create_rectangle(
+                        proj_ox - scaled_size, proj_oy - scaled_size,
+                        proj_ox + scaled_size, proj_oy + scaled_size,
+                        fill=color, outline=outline, width=2
+                    )
+                elif obs['type'] == 'sphere':
+                    self.viz_canvas.create_oval(
+                        proj_ox - scaled_size, proj_oy - scaled_size,
+                        proj_ox + scaled_size, proj_oy + scaled_size,
+                        fill=color, outline=outline, width=2
+                    )
+                else:
+                    self.viz_canvas.create_oval(
+                        proj_ox - scaled_size, proj_oy - scaled_size,
+                        proj_ox + scaled_size, proj_oy + scaled_size,
+                        fill=color, outline=outline, width=2
+                    )
+                
+                # Draw hole if exists
+                if obs['has_hole']:
+                    hole_size = scaled_size * 0.3
+                    self.viz_canvas.create_oval(
+                        proj_ox - hole_size, proj_oy - hole_size,
+                        proj_ox + hole_size, proj_oy + hole_size,
+                        fill="black", outline="white"
+                    )
         
-        # Draw fly
+        # Draw fly with better visualization
         if fly_position is not None:
             fx, fy, fz = fly_position
-            proj_fx = center_x + fx * scale
-            proj_fy = center_y + fy * scale + fz * 0.5
+            depth_scale = 1.0 + (fz / 100.0) * 0.5
+            proj_fx = center_x + fx * scale * depth_scale
+            proj_fy = center_y + fy * scale * depth_scale + fz * 2
             
-            # Draw fly body
+            # Draw fly body (larger, more visible)
+            fly_size = 8 * depth_scale
             self.viz_canvas.create_oval(
-                proj_fx - 5, proj_fy - 5,
-                proj_fx + 5, proj_fy + 5,
-                fill="yellow", outline="white", width=2
+                proj_fx - fly_size, proj_fy - fly_size,
+                proj_fx + fly_size, proj_fy + fly_size,
+                fill="yellow", outline="white", width=3
+            )
+            
+            # Draw wings
+            wing_color = "cyan"
+            self.viz_canvas.create_oval(
+                proj_fx - fly_size * 1.5, proj_fy - fly_size * 0.5,
+                proj_fx + fly_size * 0.5, proj_fy + fly_size * 0.5,
+                fill=wing_color, outline="white", width=2
+            )
+            self.viz_canvas.create_oval(
+                proj_fx - fly_size * 1.5, proj_fy - fly_size * 1.5,
+                proj_fx + fly_size * 0.5, proj_fy - fly_size * 0.5,
+                fill=wing_color, outline="white", width=2
             )
             
             # Draw direction indicator
             self.viz_canvas.create_line(
                 proj_fx, proj_fy,
-                proj_fx + 10, proj_fy,
-                fill="white", width=2, arrow=tk.LAST
+                proj_fx + 15, proj_fy,
+                fill="white", width=3, arrow=tk.LAST
+            )
+            
+            # Draw eyes
+            self.viz_canvas.create_oval(
+                proj_fx + 3, proj_fy - 3,
+                proj_fx + 6, proj_fy,
+                fill="red", outline="white"
+            )
+            self.viz_canvas.create_oval(
+                proj_fx + 3, proj_fy + 3,
+                proj_fx + 6, proj_fy,
+                fill="red", outline="white"
             )
         
-        # Draw finish line
+        # Draw finish line (more visible)
         finish_z = 50
+        finish_y = center_y + finish_z * 2
         self.viz_canvas.create_line(
-            center_x - 100, center_y + finish_z * 0.5,
-            center_x + 100, center_y + finish_z * 0.5,
-            fill="green", width=3
+            center_x - 150, finish_y,
+            center_x + 150, finish_y,
+            fill="#00FF00", width=5
         )
         self.viz_canvas.create_text(
-            center_x, center_y + finish_z * 0.5 - 10,
-            text="FINISH LINE", fill="green", font=("Arial", 10, "bold")
+            center_x, finish_y - 20,
+            text="FINISH LINE", fill="#00FF00", font=("Arial", 14, "bold")
+        )
+        
+        # Draw start line
+        start_z = -50
+        start_y = center_y + start_z * 2
+        self.viz_canvas.create_line(
+            center_x - 150, start_y,
+            center_x + 150, start_y,
+            fill="#00FFFF", width=3
+        )
+        self.viz_canvas.create_text(
+            center_x, start_y + 15,
+            text="START", fill="#00FFFF", font=("Arial", 12, "bold")
+        )
+        
+        # Draw wind indicators
+        self.viz_canvas.create_text(
+            20, 20,
+            text="WIND →", fill="white", font=("Arial", 10)
+        )
+        
+        # Draw legend
+        self.viz_canvas.create_text(
+            width - 150, 20,
+            text="Legend:", fill="white", font=("Arial", 10, "bold")
+        )
+        self.viz_canvas.create_oval(
+            width - 140, 35, width - 130, 45,
+            fill="yellow", outline="white"
+        )
+        self.viz_canvas.create_text(
+            width - 125, 40,
+            text="Fly", fill="white", font=("Arial", 8)
+        )
+        self.viz_canvas.create_oval(
+            width - 140, 50, width - 130, 60,
+            fill="orange", outline="white"
+        )
+        self.viz_canvas.create_text(
+            width - 125, 55,
+            text="Obstacle", fill="white", font=("Arial", 8)
+        )
+        self.viz_canvas.create_oval(
+            width - 140, 65, width - 130, 75,
+            fill="red", outline="white"
+        )
+        self.viz_canvas.create_text(
+            width - 125, 70,
+            text="w/ Hole", fill="white", font=("Arial", 8)
         )
     
     def log(self, message, tag="info"):
