@@ -14,6 +14,7 @@ from environment import RacingEnvironment
 from agent_logic import AgentLogic
 from rewards import RewardSystem
 from sync_manager import SyncManager
+from mujoco_fly_model import MuJoCoFlyModel
 
 # Try to import brain engine (optional)
 try:
@@ -48,6 +49,12 @@ class FruitFlyRacer:
             tunnel_radius=5.0
         )
         
+        # MuJoCo Fly Model
+        self.fly_model = MuJoCoFlyModel()
+        self.fly_model.load_connectome()  # Load MaleCNS v1.0 connectome
+        fly_mjcf = self.fly_model.create_fly_mjcf()
+        self.fly_model.load_model(fly_mjcf)
+        
         # Agent Logic
         self.agent = AgentLogic(input_size=100)
         
@@ -72,9 +79,9 @@ class FruitFlyRacer:
                         annotations_file=annotations_file,
                         connectome_file=connectome_file,
                         enable_enhanced_regions=False,
-                        max_neurons=1000  # Use subset for faster simulation
+                        max_neurons=10000  # Use larger subset for better control
                     )
-                    print("Brain engine loaded from connectome")
+                    print("Brain engine loaded from connectome with 10,000 neurons")
                 else:
                     print("Connectome files not found, using simple neural network")
                     self.brain = None
@@ -106,7 +113,7 @@ class FruitFlyRacer:
     
     def run_single_simulation(self) -> Dict:
         """
-        Run a single simulation through the obstacle course
+        Run a single simulation through the obstacle course using MuJoCo physics
         
         Returns:
             Dictionary with simulation results
@@ -120,9 +127,14 @@ class FruitFlyRacer:
         # Reset reward system
         self.rewards.reset()
         
+        # Reset MuJoCo fly model
+        self.fly_model.reset()
+        
         # Initialize fly position (start of tunnel)
-        position = np.array([0.0, 0.0, -self.environment.tunnel_length / 2])
-        velocity = np.array([0.0, 0.0, 0.0])
+        # Set MuJoCo fly position
+        if self.fly_model.data is not None:
+            self.fly_model.data.qpos = np.array([0.0, 0.0, -self.environment.tunnel_length / 2, 0, 0, 0, 0])  # x, y, z, rotations
+            self.fly_model.data.qvel = np.zeros_like(self.fly_model.data.qvel)
         
         dt = 0.02  # Time step (50 Hz)
         max_steps = int(self.environment.tunnel_length / (self.environment.max_speed * dt)) * 2
@@ -133,6 +145,17 @@ class FruitFlyRacer:
         progress_history = []
         
         for step in range(max_steps):
+            if not self.simulation_running:
+                break
+            
+            # Get current state from MuJoCo
+            if self.fly_model.data is not None:
+                position = self.fly_model.data.qpos[:3]  # x, y, z
+                velocity = self.fly_model.data.qvel[:3]  # vx, vy, vz
+            else:
+                position = np.array([0.0, 0.0, -self.environment.tunnel_length / 2])
+                velocity = np.array([0.0, 0.0, 0.0])
+            
             # Update physics tracking
             self.agent.update_physics(position, velocity, dt)
             
@@ -149,18 +172,23 @@ class FruitFlyRacer:
                 # Use simple neural network
                 motor_output = self._simple_forward_pass(neural_inputs)
             
-            # Convert motor output to velocity
-            velocity = self._motor_to_velocity(motor_output)
+            # Convert motor output to MuJoCo control
+            ctrl = self._motor_to_ctrl(motor_output)
             
-            # Enforce speed limit
-            velocity = self.agent.enforce_speed_limit(velocity, self.environment.max_speed)
-            
-            # Update position
-            position += velocity * dt
+            # Step MuJoCo physics
+            self.fly_model.step(ctrl)
             
             # Update wind
             wind = self.environment.update_wind(step * dt)
-            velocity += wind * dt  # Wind affects velocity
+            # Wind affects MuJoCo simulation through external forces
+            
+            # Get updated position
+            if self.fly_model.data is not None:
+                position = self.fly_model.data.qpos[:3]
+                velocity = self.fly_model.data.qvel[:3]
+            
+            # Enforce speed limit
+            velocity = self.agent.enforce_speed_limit(velocity, self.environment.max_speed)
             
             # Check collision
             if self.environment.check_collision(position):
@@ -191,7 +219,8 @@ class FruitFlyRacer:
             'total_points': self.rewards.total_points,
             'collision_count': self.rewards.collision_count,
             'steps': step + 1,
-            'progress_history': progress_history
+            'progress_history': progress_history,
+            'position': position
         }
         
         return results
@@ -216,9 +245,31 @@ class FruitFlyRacer:
         
         return output
     
+    def _motor_to_ctrl(self, motor_output: np.ndarray) -> np.ndarray:
+        """
+        Convert motor output to MuJoCo control vector
+        
+        Args:
+            motor_output: Motor output from neural network
+            
+        Returns:
+            MuJoCo control vector
+        """
+        # MuJoCo fly has 8 motors: 2 wings + 6 legs
+        ctrl = np.zeros(8)
+        
+        # Wing motors (first 2 outputs)
+        ctrl[0] = motor_output[0]  # Left wing
+        ctrl[1] = motor_output[1]  # Right wing
+        
+        # Leg motors (next 6 outputs)
+        ctrl[2:8] = motor_output[2:8]
+        
+        return ctrl
+    
     def _motor_to_velocity(self, motor_output: np.ndarray) -> np.ndarray:
         """
-        Convert motor output to velocity vector
+        Convert motor output to velocity vector (for non-MuJoCo fallback)
         
         Args:
             motor_output: Motor output from neural network

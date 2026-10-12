@@ -1,6 +1,7 @@
 """
 Sync Manager Module - Neural Memory & Cloud Sync
 Handles synaptic weight checkpointing and cloud synchronization.
+Uses NumPy for neural network operations (PyTorch-compatible architecture).
 """
 
 import numpy as np
