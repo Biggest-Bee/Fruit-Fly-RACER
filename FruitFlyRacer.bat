@@ -1,5 +1,5 @@
 @echo off
-cd "C:\Users\anngu\Downloads\Fruit fly ai"
+cd /d "%~dp0"
 echo ========================================
 echo Fruit Fly Racer - Desktop Application
 echo ========================================

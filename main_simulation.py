@@ -159,8 +159,11 @@ class FruitFlyRacer:
             # Update physics tracking
             self.agent.update_physics(position, velocity, dt)
             
-            # Get neural inputs
-            neural_inputs = self.agent.get_neural_inputs(self.environment.obstacles)
+            # Update wind
+            wind = self.environment.update_wind(step * dt)
+            
+            # Get neural inputs including wind direction
+            neural_inputs = self.agent.get_neural_inputs(self.environment.obstacles, wind)
             
             # Process through neural network (fly brain)
             if self.brain:

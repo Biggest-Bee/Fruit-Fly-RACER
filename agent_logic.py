@@ -62,12 +62,13 @@ class AgentLogic:
         # Calculate altitude (z position)
         self.current_altitude = position[2]
     
-    def get_neural_inputs(self, obstacles: List[Dict]) -> np.ndarray:
+    def get_neural_inputs(self, obstacles: List[Dict], wind_vector: np.ndarray = None) -> np.ndarray:
         """
         Generate neural network inputs from sensory data
         
         Args:
             obstacles: List of obstacle dictionaries
+            wind_vector: Wind direction vector (optional)
             
         Returns:
             Neural input vector
@@ -91,19 +92,27 @@ class AgentLogic:
         inputs[9] = self.current_position[1] / 10.0
         inputs[10] = self.current_position[2] / 50.0
         
-        # Input[11-30]: Visual field (20 bins)
+        # Input[11-13]: Wind direction (normalized)
+        if wind_vector is not None:
+            inputs[11] = wind_vector[0] / 2.0
+            inputs[12] = wind_vector[1] / 2.0
+            inputs[13] = wind_vector[2] / 2.0
+        else:
+            inputs[11:14] = 0.0
+        
+        # Input[14-33]: Visual field (20 bins)
         visual_inputs = self.get_visual_field_inputs(obstacles)
-        inputs[11:31] = visual_inputs
+        inputs[14:34] = visual_inputs
         
-        # Input[31-50]: Obstacle proximity (20 nearest obstacles)
+        # Input[34-53]: Obstacle proximity (20 nearest obstacles)
         obstacle_inputs = self.get_obstacle_proximity(obstacles)
-        inputs[31:51] = obstacle_inputs
+        inputs[34:54] = obstacle_inputs
         
-        # Input[51-70]: Relative obstacle layout data
+        # Input[54-73]: Relative obstacle layout data
         layout_inputs = self.get_obstacle_layout(obstacles)
-        inputs[51:71] = layout_inputs
+        inputs[54:74] = layout_inputs
         
-        # Input[71-99]: Reserved for additional sensors
+        # Input[74-99]: Reserved for additional sensors
         # (acceleration, angular velocity, etc.)
         
         return inputs

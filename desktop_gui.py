@@ -36,6 +36,13 @@ class FruitFlyRacerGUI:
         self.best_score = 0.0
         self.best_progress = 0.0
         
+        # Fly movement state
+        self.fly_position = np.array([0.0, 0.0, -50.0])
+        self.fly_velocity = np.array([0.0, 0.0, 0.5])  # Forward velocity
+        self.fly_direction = 0.0  # Yaw angle
+        self.animation_running = False
+        self.animation_speed = 0.1
+        
         # Create GUI
         self.create_menu()
         self.create_layout()
@@ -44,7 +51,11 @@ class FruitFlyRacerGUI:
         
         # Initialize 3D visualization (generate initial obstacles)
         self.sample_obstacles = []
-        self.sample_fly_position = np.array([0.0, 0.0, -50.0])
+        self.fly_position = np.array([0.0, 0.0, -50.0])  # Changed from sample_fly_position to fly_position
+        self.fly_velocity = np.array([0.0, 0.0, 0.5])  # Forward velocity
+        self.fly_direction = 0.0  # Yaw angle
+        self.animation_running = False
+        self.animation_speed = 0.1
         
         # Generate sample obstacles for visualization
         self.generate_sample_obstacles()
@@ -54,7 +65,14 @@ class FruitFlyRacerGUI:
         self.create_log_panel(self.right_panel)
         
         # Draw initial 3D scene
-        self.root.after(100, lambda: self.draw_3d_tunnel(self.sample_obstacles, self.sample_fly_position))
+        self.root.after(100, lambda: self.draw_3d_tunnel(self.sample_obstacles, self.fly_position))
+        
+        # Bind keyboard controls for navigation
+        self.root.bind('<Key>', self.on_key_press)
+        self.root.bind('<KeyRelease>', self.on_key_release)
+        
+        # Start fly animation
+        self.start_fly_animation()
         
         print("GUI initialized and ready")
     
@@ -76,6 +94,63 @@ class FruitFlyRacerGUI:
                 'type': random.choice(['cube', 'sphere', 'triangle']),
                 'has_hole': has_hole
             })
+    
+    def on_key_press(self, event):
+        """Handle key press for fly navigation"""
+        key = event.keysym
+        speed = 0.5
+        
+        if key == 'w' or key == 'W':
+            self.fly_velocity[2] += speed  # Forward
+        elif key == 's' or key == 'S':
+            self.fly_velocity[2] -= speed  # Backward
+        elif key == 'a' or key == 'A':
+            self.fly_velocity[0] -= speed  # Left
+        elif key == 'd' or key == 'D':
+            self.fly_velocity[0] += speed  # Right
+        elif key == 'q' or key == 'Q':
+            self.fly_velocity[1] += speed  # Up
+        elif key == 'e' or key == 'E':
+            self.fly_velocity[1] -= speed  # Down
+        
+        # Clamp velocity
+        max_vel = 2.0
+        self.fly_velocity = np.clip(self.fly_velocity, -max_vel, max_vel)
+    
+    def on_key_release(self, event):
+        """Handle key release"""
+        key = event.keysym
+        # Reset velocity when key released
+        if key in ['w', 'W', 's', 'S']:
+            self.fly_velocity[2] = 0.5  # Maintain slight forward momentum
+        elif key in ['a', 'A', 'd', 'D']:
+            self.fly_velocity[0] = 0.0
+        elif key in ['q', 'Q', 'e', 'E']:
+            self.fly_velocity[1] = 0.0
+    
+    def start_fly_animation(self):
+        """Start fly animation loop"""
+        self.animation_running = True
+        self.animate_fly()
+    
+    def animate_fly(self):
+        """Animate fly movement"""
+        if not self.animation_running:
+            return
+        
+        # Update fly position
+        self.fly_position += self.fly_velocity * self.animation_speed
+        
+        # Keep fly within tunnel bounds
+        self.fly_position[0] = np.clip(self.fly_position[0], -4.5, 4.5)
+        self.fly_position[1] = np.clip(self.fly_position[1], -4.5, 4.5)
+        self.fly_position[2] = np.clip(self.fly_position[2], -48, 48)
+        
+        # Update visualization
+        self.draw_3d_tunnel(self.sample_obstacles, self.fly_position)
+        
+        # Schedule next frame
+        self.root.after(50, self.animate_fly)
     
     def create_menu(self):
         """Create menu bar"""
@@ -216,7 +291,7 @@ class FruitFlyRacerGUI:
         if obstacles is None:
             obstacles = self.sample_obstacles
         if fly_position is None:
-            fly_position = self.sample_fly_position
+            fly_position = self.fly_position
         
         # Canvas dimensions
         width = self.viz_canvas.winfo_width()
@@ -231,7 +306,7 @@ class FruitFlyRacerGUI:
         center_x = width / 2
         center_y = height / 2
         
-        # Draw tunnel walls (cylinder with perspective)
+        # Draw tunnel walls (cylinder with perspective) - SOLID
         num_segments = 20
         tunnel_radius = 5.0
         tunnel_length = 100.0
@@ -250,18 +325,22 @@ class FruitFlyRacerGUI:
                 proj_x = center_x + x * scale
                 proj_y = center_y + y * scale + z * 2  # Z affects Y position for side view
                 
-                # Draw wall segment
+                # Draw wall segment - SOLID with darker colors
                 next_angle = 2 * math.pi * (i + 1) / num_segments
                 next_x = current_radius * math.cos(next_angle)
                 next_y = current_radius * math.sin(next_angle)
                 next_proj_x = center_x + next_x * scale
                 next_proj_y = center_y + next_y * scale + z * 2
                 
-                # Color gradient based on depth
-                depth_color = int(100 + (z + tunnel_length/2) / tunnel_length * 100)
-                color = f"#{depth_color:02x}{depth_color:02x}{depth_color+50:02x}"
+                # Darker, more solid colors
+                depth_color = int(50 + (z + tunnel_length/2) / tunnel_length * 80)
+                color = f"#{depth_color:02x}{depth_color:02x}{depth_color+30:02x}"
                 
-                self.viz_canvas.create_line(proj_x, proj_y, next_proj_x, next_proj_y, fill=color, width=2)
+                # Draw filled polygon for solid look
+                self.viz_canvas.create_polygon(
+                    [proj_x, proj_y, next_proj_x, next_proj_y, center_x, center_y],
+                    fill=color, outline=color
+                )
         
         # Draw obstacles with better visualization
         if obstacles:
@@ -277,9 +356,9 @@ class FruitFlyRacerGUI:
                 proj_ox = center_x + ox * scale * depth_scale
                 proj_oy = center_y + oy * scale * depth_scale + oz * 2
                 
-                # Draw obstacle based on type
-                color = "red" if obs['has_hole'] else "orange"
-                outline = "white" if obs['has_hole'] else "yellow"
+                # Draw obstacle based on type - SOLID
+                color = "#FF4444" if obs['has_hole'] else "#FF8800"
+                outline = "#FFFFFF" if obs['has_hole'] else "#FFFF00"
                 
                 if obs['type'] == 'cube':
                     self.viz_canvas.create_rectangle(
@@ -300,13 +379,13 @@ class FruitFlyRacerGUI:
                         fill=color, outline=outline, width=2
                     )
                 
-                # Draw hole if exists
+                # Draw hole if exists - BLACK solid
                 if obs['has_hole']:
                     hole_size = scaled_size * 0.3
                     self.viz_canvas.create_oval(
                         proj_ox - hole_size, proj_oy - hole_size,
                         proj_ox + hole_size, proj_oy + hole_size,
-                        fill="black", outline="white"
+                        fill="#000000", outline="#FFFFFF", width=2
                     )
         
         # Draw fly with better visualization
