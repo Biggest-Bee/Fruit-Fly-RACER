@@ -50,22 +50,22 @@ class FruitFlyRacerGUI:
         self.create_status_panel()
         
         # Initialize 3D visualization (generate initial obstacles)
-        self.sample_obstacles = []
+        from environment import RacingEnvironment
+        self.environment = RacingEnvironment(tunnel_length=100.0, tunnel_radius=5.0)
+        self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+        self.sample_obstacles = self.environment.obstacles
         self.fly_position = np.array([0.0, 0.0, -50.0])  # Changed from sample_fly_position to fly_position
         self.fly_velocity = np.array([0.0, 0.0, 0.5])  # Forward velocity
         self.fly_direction = 0.0  # Yaw angle
         self.animation_running = False
         self.animation_speed = 0.1
         
-        # Generate sample obstacles for visualization
-        self.generate_sample_obstacles()
-        
         # Now create 3D and log panels (they need self.right_panel)
         self.create_3d_panel(self.right_panel)
         self.create_log_panel(self.right_panel)
         
         # Draw initial 3D scene
-        self.root.after(100, lambda: self.draw_3d_tunnel(self.sample_obstacles, self.fly_position))
+        self.root.after(100, lambda: self.draw_3d_tunnel(self.environment.obstacles, self.fly_position))
         
         # Bind keyboard controls for navigation
         self.root.bind('<Key>', self.on_key_press)
@@ -75,25 +75,6 @@ class FruitFlyRacerGUI:
         self.start_fly_animation()
         
         print("GUI initialized and ready")
-    
-    def generate_sample_obstacles(self):
-        """Generate sample obstacles for visualization"""
-        import random
-        for i in range(15):
-            z = random.uniform(-40, 40)
-            angle = random.uniform(0, 2 * math.pi)
-            radius = random.uniform(0, 4.0)
-            x = radius * math.cos(angle)
-            y = radius * math.sin(angle)
-            size = random.uniform(0.5, 2.0)
-            has_hole = random.random() < 0.5
-            
-            self.sample_obstacles.append({
-                'position': np.array([x, y, z]),
-                'size': size,
-                'type': random.choice(['cube', 'sphere', 'triangle']),
-                'has_hole': has_hole
-            })
     
     def on_key_press(self, event):
         """Handle key press for fly navigation"""
@@ -147,7 +128,7 @@ class FruitFlyRacerGUI:
         self.fly_position[2] = np.clip(self.fly_position[2], -48, 48)
         
         # Update visualization
-        self.draw_3d_tunnel(self.sample_obstacles, self.fly_position)
+        self.draw_3d_tunnel(self.environment.obstacles, self.fly_position)
         
         # Schedule next frame
         self.root.after(50, self.animate_fly)
@@ -282,14 +263,14 @@ class FruitFlyRacerGUI:
         Draw 3D tunnel visualization on canvas
         
         Args:
-            obstacles: List of obstacles to draw (uses sample if None)
-            fly_position: Current fly position (uses sample if None)
+            obstacles: List of obstacles to draw (uses environment if None)
+            fly_position: Current fly position (uses fly_position if None)
         """
         self.viz_canvas.delete("all")
         
-        # Use sample obstacles if none provided
+        # Use environment obstacles if none provided
         if obstacles is None:
-            obstacles = self.sample_obstacles
+            obstacles = self.environment.obstacles
         if fly_position is None:
             fly_position = self.fly_position
         
@@ -372,7 +353,45 @@ class FruitFlyRacerGUI:
                         proj_ox + scaled_size, proj_oy + scaled_size,
                         fill=color, outline=outline, width=2
                     )
+                elif obs['type'] == 'triangle':
+                    # Draw triangle
+                    self.viz_canvas.create_polygon(
+                        proj_ox, proj_oy - scaled_size,
+                        proj_ox - scaled_size, proj_oy + scaled_size,
+                        proj_ox + scaled_size, proj_oy + scaled_size,
+                        fill=color, outline=outline, width=2
+                    )
+                elif obs['type'] == 'rectangle':
+                    # Draw rectangle (larger than cube)
+                    self.viz_canvas.create_rectangle(
+                        proj_ox - scaled_size * 1.5, proj_oy - scaled_size * 0.5,
+                        proj_ox + scaled_size * 1.5, proj_oy + scaled_size * 0.5,
+                        fill=color, outline=outline, width=2
+                    )
+                elif obs['type'] == 'plane':
+                    # Draw plane (flat, wide)
+                    self.viz_canvas.create_rectangle(
+                        proj_ox - scaled_size * 2, proj_oy - scaled_size * 0.2,
+                        proj_ox + scaled_size * 2, proj_oy + scaled_size * 0.2,
+                        fill=color, outline=outline, width=2
+                    )
+                elif obs['type'] == 'wall':
+                    # Draw wall (tall and wide)
+                    self.viz_canvas.create_rectangle(
+                        proj_ox - scaled_size * 1.5, proj_oy - scaled_size * 2,
+                        proj_ox + scaled_size * 1.5, proj_oy + scaled_size * 2,
+                        fill=color, outline=outline, width=2
+                    )
+                elif obs['type'] == 'cone':
+                    # Draw cone (triangle pointing up)
+                    self.viz_canvas.create_polygon(
+                        proj_ox, proj_oy - scaled_size * 1.5,
+                        proj_ox - scaled_size, proj_oy + scaled_size,
+                        proj_ox + scaled_size, proj_oy + scaled_size,
+                        fill=color, outline=outline, width=2
+                    )
                 else:
+                    # Default shape
                     self.viz_canvas.create_oval(
                         proj_ox - scaled_size, proj_oy - scaled_size,
                         proj_ox + scaled_size, proj_oy + scaled_size,
