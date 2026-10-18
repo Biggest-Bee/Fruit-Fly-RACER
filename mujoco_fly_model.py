@@ -44,7 +44,7 @@ class MuJoCoFlyModel:
     def load_official_flybody(self):
         """Load the official flybody MuJoCo XML model"""
         try:
-            # Path to official flybody XML
+            # Path to official flybody XML (from embedded flybody folder)
             flybody_xml = "flybody/flybody/fruitfly/assets/fruitfly.xml"
             
             if not os.path.exists(flybody_xml):
