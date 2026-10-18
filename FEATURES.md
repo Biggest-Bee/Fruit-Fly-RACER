@@ -67,16 +67,17 @@ Feed telemetry and environmental data into the fly's neural network:
 - **Connectome Initialization:** Create initial checkpoint from connectome weights
 
 ### 6. MuJoCo Fly Model (`mujoco_fly_model.py`)
+- **Official TuragaLab/DeepMind Flybody Model:** Real scientific fruit fly model from Nature publication
 - **Anatomically-Accurate Fly Body:**
-  - Thorax (main body segment)
-  - Head with compound eyes
-  - Abdomen
-  - Wings (left and right with motors)
-  - 6 legs (front, middle, back pairs)
+  - 109 degrees of freedom (DOF)
+  - 78 actuators (motors)
+  - 68 bodies (thorax, head, abdomen, wings, legs, antennae, halteres)
+  - 103 joints for realistic articulation
+  - High-fidelity OBJ mesh assets for all body parts
 - **MuJoCo Physics Integration:** Full MuJoCo physics simulation
 - **MaleCNS v1.0 Connectome Integration:** Loads and integrates with connectome weights
 - **Neural Control System:** Connects sensory inputs to motor outputs via connectome
-- **8 Motor Actuators:** 2 wing motors + 6 leg motors for realistic movement
+- **No Bazel Required:** Loads official flybody XML directly with MuJoCo
 
 ### 7. Core Brain Simulation (`brain_sim/`)
 - **brain_engine.py:** Core brain simulation engine with optional connectome loading
