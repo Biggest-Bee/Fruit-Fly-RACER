@@ -1,6 +1,6 @@
 """
-MuJoCo Fly Model - Custom fly body model for MuJoCo
-Anatomically-accurate fly model compatible with MaleCNS v1.0 connectome
+MuJoCo Fly Model - Official flybody model for MuJoCo
+Uses the official TuragaLab/DeepMind fruit fly body model
 """
 
 import mujoco
@@ -8,19 +8,16 @@ import numpy as np
 import os
 import sys
 
-# Add parent directory for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 class MuJoCoFlyModel:
     """
-    MuJoCo-based fly model for racing simulation
+    MuJoCo-based fly model using official flybody XML
     Integrated with MaleCNS v1.0 connectome for neural control
     """
     
     def __init__(self, connectome_weights=None):
         """
-        Initialize MuJoCo fly model
+        Initialize MuJoCo fly model using official flybody
         
         Args:
             connectome_weights: Optional connectome weight matrix for neural control
@@ -37,9 +34,32 @@ class MuJoCoFlyModel:
         self.connectome_weights = connectome_weights
         self.neural_control = None
         
-        print("MuJoCo Fly Model initialized")
+        # Load official flybody model
+        self.load_official_flybody()
+        
+        print("MuJoCo Fly Model initialized with official flybody")
         if connectome_weights is not None:
             print(f"Connectome integration: {connectome_weights.shape} weights loaded")
+    
+    def load_official_flybody(self):
+        """Load the official flybody MuJoCo XML model"""
+        try:
+            # Path to official flybody XML
+            flybody_xml = "flybody/flybody/fruitfly/assets/fruitfly.xml"
+            
+            if not os.path.exists(flybody_xml):
+                raise FileNotFoundError(f"flybody XML not found at {flybody_xml}")
+            
+            # Load the official model
+            self.model = mujoco.MjModel.from_xml_path(flybody_xml)
+            self.data = mujoco.MjData(self.model)
+            
+            print(f"Loaded official flybody model: {self.model.nq} DOF, {self.model.nu} actuators")
+            print(f"Body count: {self.model.nbody}, Joint count: {self.model.njnt}")
+            
+        except Exception as e:
+            print(f"Error loading official flybody: {e}")
+            raise
     
     def load_connectome(self):
         """Load MaleCNS v1.0 connectome if available"""
@@ -93,152 +113,59 @@ class MuJoCoFlyModel:
             # Fallback to random output
             return np.random.randn(8) * 0.1
     
-    def create_fly_mjcf(self) -> str:
+    def step(self, dt: float = 0.02):
         """
-        Create MuJoCo XML for the fly body
-        
-        Returns:
-            MuJoCo XML string
-        """
-        mjcf = """<?xml version="1.0"?>
-<mujoco>
-  <compiler angle="radian" coordinate="local" />
-  <world>
-    <default>
-      <geom solref="0.3" solrgba="0.7 0.7 0.7 1.0"/>
-      <motor ctrlrange="-1 1" gear="10"/>
-    </default>
-    
-    <!-- Fly Body -->
-    <body name="fly" pos="0 0 1">
-      <!-- Thorax (main body) -->
-      <geom name="thorax" type="capsule" size="0.05 0.1" pos="0 0 0" rgba="0.8 0.6 0.4 1"/>
-      
-      <!-- Head -->
-      <body name="head" pos="0.1 0 0.05">
-        <geom name="head" type="sphere" size="0.03" rgba="0.7 0.5 0.3 1"/>
-        <!-- Eyes -->
-        <geom name="left_eye" type="sphere" size="0.015" pos="0.02 0.02 0" rgba="1 0 0 1"/>
-        <geom name="right_eye" type="sphere" size="0.015" pos="0.02 -0.02 0" rgba="1 0 0 1"/>
-      </body>
-      
-      <!-- Abdomen -->
-      <body name="abdomen" pos="-0.1 0 0">
-        <geom name="abdomen" type="capsule" size="0.04 0.08" pos="0 0 0" rgba="0.7 0.5 0.3 1"/>
-      </body>
-      
-      <!-- Wings -->
-      <body name="left_wing" pos="0 0.05 0.05">
-        <joint name="left_wing_joint" type="hinge" axis="0 1 0" range="-1.5 1.5"/>
-        <geom name="left_wing" type="box" size="0.15 0.01 0.4" rgba="0.6 0.8 1 0.7"/>
-        <motor name="left_wing_motor" joint="left_wing_joint"/>
-      </body>
-      
-      <body name="right_wing" pos="0 -0.05 0.05">
-        <joint name="right_wing_joint" type="hinge" axis="0 1 0" range="-1.5 1.5"/>
-        <geom name="right_wing" type="box" size="0.15 0.01 0.4" rgba="0.6 0.8 1 0.7"/>
-        <motor name="right_wing_motor" joint="right_wing_joint"/>
-      </body>
-      
-      <!-- Legs (6 legs) -->
-      <body name="front_left_leg" pos="0.05 0.02 -0.02">
-        <joint name="front_left_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="front_left_leg" type="capsule" size="0.005 0.04" rgba="0.3 0.3 0.3 1"/>
-        <motor name="front_left_leg_motor" joint="front_left_leg_joint"/>
-      </body>
-      
-      <body name="front_right_leg" pos="0.05 -0.02 -0.02">
-        <joint name="front_right_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="front_right_leg" type="capsule" size="0.005 0.04" rgba="0.3 0.3 0.3 1"/>
-        <motor name="front_right_leg_motor" joint="front_right_leg_joint"/>
-      </body>
-      
-      <body name="middle_left_leg" pos="0 0.02 -0.03">
-        <joint name="middle_left_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="middle_left_leg" type="capsule" size="0.005 0.035" rgba="0.3 0.3 0.3 1"/>
-        <motor name="middle_left_leg_motor" joint="middle_left_leg_joint"/>
-      </body>
-      
-      <body name="middle_right_leg" pos="0 -0.02 -0.03">
-        <joint name="middle_right_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="middle_right_leg" type="capsule" size="0.005 0.035" rgba="0.3 0.3 0.3 1"/>
-        <motor name="middle_right_leg_motor" joint="middle_right_leg_joint"/>
-      </body>
-      
-      <body name="back_left_leg" pos="-0.05 0.02 -0.02">
-        <joint name="back_left_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="back_left_leg" type="capsule" size="0.005 0.04" rgba="0.3 0.3 0.3 1"/>
-        <motor name="back_left_leg_motor" joint="back_left_leg_joint"/>
-      </body>
-      
-      <body name="back_right_leg" pos="-0.05 -0.02 -0.02">
-        <joint name="back_left_leg_joint" type="hinge" axis="0 0 1" range="-0.5 0.5"/>
-        <geom name="back_right_leg" type="capsule" size="0.005 0.04" rgba="0.3 0.3 0.3 1"/>
-        <motor name="back_right_leg_motor" joint="back_right_leg_joint"/>
-      </body>
-    </body>
-    
-    <!-- Wind force -->
-    <actuator>
-      <general name="wind_force" gear="1"/>
-    </actuator>
-  </world>
-</mujoco>"""
-        return mjcf
-    
-    def load_model(self, mjcf: str):
-        """
-        Load MuJoCo model from XML
+        Step the physics simulation forward
         
         Args:
-            mjcf: MuJoCo XML string
-        """
-        try:
-            self.model = mujoco.MjModel.from_xml_string(mjcf)
-            self.data = mujoco.MjData(self.model)
-            print("MuJoCo model loaded successfully")
-        except Exception as e:
-            print(f"Error loading MuJoCo model: {e}")
-    
-    def step(self, ctrl: np.ndarray):
-        """
-        Step the simulation forward
-        
-        Args:
-            ctrl: Control vector for actuators
+            dt: Time step in seconds
         """
         if self.model is None or self.data is None:
-            return
+            raise RuntimeError("Model not loaded. Call load_official_flybody() first.")
         
-        self.data.ctrl = ctrl
-        mujoco.mj_step(self.model, self.data)
-    
-    def get_state(self) -> dict:
-        """
-        Get current state of the fly
-        
-        Returns:
-            Dictionary with position, velocity, etc.
-        """
-        if self.data is None:
-            return {}
-        
-        return {
-            'position': self.data.qpos.copy(),
-            'velocity': self.data.qvel.copy(),
-            'acceleration': self.data.qacc.copy(),
-            'speed': np.linalg.norm(self.data.qvel),
-            'altitude': self.data.qpos[2] if len(self.data.qpos) > 2 else 0.0
-        }
+        mujoco.mj_step(self.model, self.data, dt)
     
     def reset(self):
-        """Reset the simulation"""
+        """Reset the simulation to initial state"""
         if self.data is not None:
             mujoco.mj_resetData(self.model, self.data)
+    
+    def get_position(self) -> np.ndarray:
+        """Get current fly position"""
+        if self.data is None:
+            return np.array([0.0, 0.0, 0.0])
+        return self.data.qpos[:3]  # First 3 DOF are usually position
+    
+    def get_velocity(self) -> np.ndarray:
+        """Get current fly velocity"""
+        if self.data is None:
+            return np.array([0.0, 0.0, 0.0])
+        return self.data.qvel[:3]  # First 3 velocities
+    
+    def apply_neural_control(self, motor_commands: np.ndarray):
+        """
+        Apply neural control commands to actuators
+        
+        Args:
+            motor_commands: Motor command vector
+        """
+        if self.data is None:
+            return
+        
+        # Apply motor commands to actuators
+        num_actuators = min(len(motor_commands), self.model.nu)
+        self.data.ctrl[:num_actuators] = motor_commands[:num_actuators]
+    
+    def close(self):
+        """Clean up resources"""
+        if self.viewer is not None:
+            self.viewer.close()
+            self.viewer = None
 
 
 if __name__ == "__main__":
+    # Test loading the official flybody
     fly = MuJoCoFlyModel()
-    mjcf = fly.create_fly_mjcf()
-    fly.load_model(mjcf)
-    print("MuJoCo Fly Model test complete")
+    print("Official flybody loaded successfully!")
+    print(f"Position: {fly.get_position()}")
+    print(f"Velocity: {fly.get_velocity()}")
