@@ -26,9 +26,18 @@ class MuJoCoFlyModel:
         self.data = None
         self.viewer = None
         
-        # Physics parameters
-        self.max_speed = 5.0
-        self.gravity = -9.81
+        # Physics parameters - realistic flight constraints
+        self.max_speed = 5.0              # m/s (max forward speed)
+        self.max_acceleration = 10.0      # m/s² (takes 0.5s to reach max speed)
+        self.max_turn_rate = 3.0          # rad/s (~172°/s, 90° turn takes ~1.5s)
+        self.max_pitch_rate = 2.0         # rad/s (up/down turning speed)
+        self.drag_coefficient = 0.1       # Air resistance (gradual deceleration)
+        
+        # Current flight state
+        self.current_speed = 0.0
+        self.current_acceleration = np.array([0.0, 0.0, 0.0])
+        self.angular_velocity = np.array([0.0, 0.0, 0.0])  # yaw, pitch, roll
+        self.orientation = np.array([0.0, 0.0, 0.0])      # yaw, pitch, roll
         
         # Connectome integration
         self.connectome_weights = connectome_weights
@@ -38,6 +47,8 @@ class MuJoCoFlyModel:
         self.load_official_flybody()
         
         print("MuJoCo Fly Model initialized with official flybody")
+        print(f"Physics constraints: max_speed={self.max_speed}m/s, max_accel={self.max_acceleration}m/s²")
+        print(f"Turn rate: {self.max_turn_rate} rad/s (90° turn in {np.pi/2/self.max_turn_rate:.2f}s)")
         if connectome_weights is not None:
             print(f"Connectome integration: {connectome_weights.shape} weights loaded")
     
@@ -80,7 +91,7 @@ class MuJoCoFlyModel:
             print(f"Error loading connectome: {e}")
             return False
     
-    def connect_to_neural_network(self, neural_inputs: np.ndarray) -> np.ndarray:
+    def connect_to_neural_network(self, neural_inputs: np.ndarray) -> tuple:
         """
         Connect sensory inputs to neural network (connectome-based)
         
@@ -88,7 +99,7 @@ class MuJoCoFlyModel:
             neural_inputs: Sensory input vector
             
         Returns:
-            Motor output vector
+            Tuple of (desired_velocity, desired_turn)
         """
         if self.connectome_weights is not None:
             # Use connectome weights for neural processing
@@ -104,25 +115,131 @@ class MuJoCoFlyModel:
                     neural_inputs = padded_inputs
                 
                 # Process through connectome
-                motor_output = np.dot(neural_inputs, self.connectome_weights[:len(neural_inputs), :8])
-                return motor_output
+                # Output split: first 3 for velocity (x,y,z), next 2 for turn (yaw,pitch)
+                motor_output = np.dot(neural_inputs, self.connectome_weights[:len(neural_inputs), :5])
+                
+                # Extract velocity and turn commands
+                desired_velocity = motor_output[:3] * self.max_speed  # Scale to max speed
+                desired_turn = motor_output[3:5]  # yaw, pitch
+                
+                return desired_velocity, desired_turn
             except Exception as e:
                 print(f"Error processing through connectome: {e}")
-                return np.random.randn(8) * 0.1
+                return np.array([0.0, 0.0, 0.5]), np.array([0.0, 0.0])
         else:
-            # Fallback to random output
-            return np.random.randn(8) * 0.1
+            # Fallback: move forward slowly
+            return np.array([0.0, 0.0, 0.5]), np.array([0.0, 0.0])
     
-    def step(self, dt: float = 0.02):
+    def apply_acceleration(self, desired_velocity: np.ndarray, dt: float):
         """
-        Step the physics simulation forward
+        Apply realistic acceleration (not instant velocity change)
+        
+        Args:
+            desired_velocity: Target velocity vector
+            dt: Time step
+        """
+        if self.data is None:
+            return
+        
+        # Get current velocity
+        current_vel = self.get_velocity()
+        
+        # Calculate acceleration needed
+        accel = (desired_velocity - current_vel) / dt
+        
+        # Clamp acceleration (can't accelerate faster than max)
+        accel_mag = np.linalg.norm(accel)
+        if accel_mag > self.max_acceleration:
+            accel = accel / accel_mag * self.max_acceleration
+        
+        # Store acceleration for telemetry
+        self.current_acceleration = accel
+        
+        # Apply acceleration to MuJoCo velocity
+        self.data.qvel[:3] += accel * dt
+        
+        # Clamp speed
+        speed = np.linalg.norm(self.data.qvel[:3])
+        if speed > self.max_speed:
+            self.data.qvel[:3] = self.data.qvel[:3] / speed * self.max_speed
+        
+        self.current_speed = np.linalg.norm(self.data.qvel[:3])
+    
+    def apply_turn(self, desired_yaw: float, desired_pitch: float, dt: float):
+        """
+        Apply realistic turning limits (not instant direction change)
+        
+        Args:
+            desired_yaw: Desired yaw change (radians)
+            desired_pitch: Desired pitch change (radians)
+            dt: Time step
+        """
+        # Calculate angular acceleration
+        angular_accel_yaw = (desired_yaw - self.angular_velocity[0]) / dt
+        angular_accel_pitch = (desired_pitch - self.angular_velocity[1]) / dt
+        
+        # Clamp angular velocity (gradual turning)
+        self.angular_velocity[0] = np.clip(
+            self.angular_velocity[0] + angular_accel_yaw * dt,
+            -self.max_turn_rate, self.max_turn_rate
+        )
+        self.angular_velocity[1] = np.clip(
+            self.angular_velocity[1] + angular_accel_pitch * dt,
+            -self.max_pitch_rate, self.max_pitch_rate
+        )
+        
+        # Bank when turning (like real aircraft)
+        bank_angle = -self.angular_velocity[0] * 0.5  # Roll when yawing
+        self.angular_velocity[2] = bank_angle
+        
+        # Update orientation
+        self.orientation += self.angular_velocity * dt
+        
+        # Apply orientation to MuJoCo (simplified - affects actuators)
+        # Real implementation would set qpos for orientation joints
+        if self.model.nq > 3:
+            # If there are orientation DOFs, update them
+            for i in range(min(3, self.model.nq - 3)):
+                self.data.qpos[3 + i] = self.orientation[i]
+    
+    def apply_drag(self, dt: float):
+        """
+        Apply air resistance (gradual deceleration)
+        
+        Args:
+            dt: Time step
+        """
+        if self.data is None:
+            return
+        
+        # Apply drag to velocity (gradual slowdown)
+        drag_factor = 1.0 - (self.drag_coefficient * dt)
+        self.data.qvel[:3] *= drag_factor
+        self.current_speed = np.linalg.norm(self.data.qvel[:3])
+    
+    def step(self, dt: float = 0.02, desired_velocity=None, desired_turn=None):
+        """
+        Step the physics simulation forward with realistic constraints
         
         Args:
             dt: Time step in seconds
+            desired_velocity: Optional target velocity from neural network
+            desired_turn: Optional target (yaw, pitch) from neural network
         """
         if self.model is None or self.data is None:
             raise RuntimeError("Model not loaded. Call load_official_flybody() first.")
         
+        # Apply realistic physics if neural control provided
+        if desired_velocity is not None:
+            self.apply_acceleration(desired_velocity, dt)
+        
+        if desired_turn is not None:
+            self.apply_turn(desired_turn[0], desired_turn[1], dt)
+        
+        # Apply drag (gradual deceleration)
+        self.apply_drag(dt)
+        
+        # Step MuJoCo physics
         mujoco.mj_step(self.model, self.data, dt)
     
     def reset(self):

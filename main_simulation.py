@@ -175,11 +175,12 @@ class FruitFlyRacer:
                 # Use simple neural network
                 motor_output = self._simple_forward_pass(neural_inputs)
             
-            # Convert motor output to MuJoCo control
-            ctrl = self._motor_to_ctrl(motor_output)
+            # Get desired velocity and turn from fly model's neural control
+            # The connectome decides where to fly (not keyboard presses)
+            desired_velocity, desired_turn = self.fly_model.connect_to_neural_network(neural_inputs)
             
-            # Step MuJoCo physics
-            self.fly_model.step(ctrl)
+            # Step MuJoCo physics with realistic constraints
+            self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
             
             # Update wind
             wind = self.environment.update_wind(step * dt)
