@@ -49,11 +49,9 @@ class FruitFlyRacer:
             tunnel_radius=5.0
         )
         
-        # MuJoCo Fly Model
+        # MuJoCo Fly Model (loads official flybody automatically)
         self.fly_model = MuJoCoFlyModel()
         self.fly_model.load_connectome()  # Load MaleCNS v1.0 connectome
-        fly_mjcf = self.fly_model.create_fly_mjcf()
-        self.fly_model.load_model(fly_mjcf)
         
         # Agent Logic
         self.agent = AgentLogic(input_size=100)
