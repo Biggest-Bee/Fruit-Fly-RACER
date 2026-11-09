@@ -12,15 +12,10 @@ Fruit Fly Racer is a Python-based simulation application featuring a virtual fru
 
 ## Core Features
 
-### 1. Desktop GUI Application (`desktop_gui.py`)
-- **Tkinter-based desktop application** with full windowed interface
-- **3D Visualization Canvas** showing:
-  - Perspective-based tunnel walls with depth effect
-  - Procedural obstacles (cubes, spheres, triangles) with holes/apertures
-  - Anatomically-accurate fly with body, wings, eyes, and direction indicator
-  - Start line and finish line markers
-  - Wind direction indicators
-  - Interactive legend
+### 1. Desktop GUI Application (`desktop_gui_3d.py`)
+- **3D Desktop Application** using MuJoCo's built-in 3D viewer
+- **Real 3D Rendering:** Official flybody model with all OBJ meshes (head, wings, legs, abdomen, antennae)
+- **Interactive 3D Viewport:** MuJoCo viewer with camera controls
 - **Control Panel:**
   - Start/Stop simulation buttons
   - Number of simulations input
@@ -30,9 +25,8 @@ Fruit Fly Racer is a Python-based simulation application featuring a virtual fru
   - Best score tracking
   - Best progress tracking
   - Real-time status indicator
-- **Simulation Log:** Color-coded log panel with info, success, error, and warning messages
-- **Keyboard Navigation:** WASD/QE controls for manual fly navigation
-- **Live Animation:** Fly moves and animates in real-time
+- **Simulation Log:** Read-only log panel (cannot be edited)
+- **Static Obstacles:** Obstacles are fixed in 3D space, not animated
 
 ### 2. 3D Obstacle Tunnel Environment (`environment.py`)
 - **Continuous Racing Tunnel:** A 3D tunnel with dynamic, shifting wind fields (turbulence) that affect the fly's flight path
