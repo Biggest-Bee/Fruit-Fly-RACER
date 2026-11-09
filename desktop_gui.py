@@ -54,7 +54,7 @@ class FruitFlyRacerGUI:
         self.environment = RacingEnvironment(tunnel_length=100.0, tunnel_radius=5.0)
         self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
         self.sample_obstacles = self.environment.obstacles
-        self.fly_position = np.array([0.0, 0.0, -50.0])  # Changed from sample_fly_position to fly_position
+        self.fly_position = np.array([0.0, 0.0, -45.0])  # Start inside tunnel (near start)
         self.fly_velocity = np.array([0.0, 0.0, 0.5])  # Forward velocity
         self.fly_direction = 0.0  # Yaw angle
         self.animation_running = False
@@ -287,12 +287,12 @@ class FruitFlyRacerGUI:
         center_x = width / 2
         center_y = height / 2
         
-        # Draw tunnel walls (cylinder with perspective) - SOLID
+        # Draw tunnel walls (cylinder with perspective) - FULLY OPAQUE
         num_segments = 20
         tunnel_radius = 5.0
         tunnel_length = 100.0
         
-        # Draw multiple tunnel sections for depth effect
+        # Draw tunnel from far to near (painter's algorithm for correct occlusion)
         for z in np.linspace(-tunnel_length/2, tunnel_length/2, 10):
             depth_scale = 1.0 + (z / tunnel_length) * 0.5  # Perspective scaling
             current_radius = tunnel_radius * depth_scale
@@ -306,40 +306,62 @@ class FruitFlyRacerGUI:
                 proj_x = center_x + x * scale
                 proj_y = center_y + y * scale + z * 2  # Z affects Y position for side view
                 
-                # Draw wall segment - SOLID with darker colors
+                # Draw wall segment - FULLY OPAQUE with depth-based gradient
                 next_angle = 2 * math.pi * (i + 1) / num_segments
                 next_x = current_radius * math.cos(next_angle)
                 next_y = current_radius * math.sin(next_angle)
                 next_proj_x = center_x + next_x * scale
                 next_proj_y = center_y + next_y * scale + z * 2
                 
-                # Darker, more solid colors
-                depth_color = int(50 + (z + tunnel_length/2) / tunnel_length * 80)
-                color = f"#{depth_color:02x}{depth_color:02x}{depth_color+30:02x}"
+                # Opaque colors - no transparency, just solid shades
+                depth_factor = (z + tunnel_length/2) / tunnel_length
+                # Darker toward edges, lighter toward center (gradient effect)
+                gray_value = int(30 + depth_factor * 60)  # 30-90 range
+                color = f"#{gray_value:02x}{gray_value:02x}{gray_value+20:02x}"
                 
-                # Draw filled polygon for solid look
+                # Draw filled polygon - completely opaque
                 self.viz_canvas.create_polygon(
                     [proj_x, proj_y, next_proj_x, next_proj_y, center_x, center_y],
                     fill=color, outline=color
                 )
         
-        # Draw obstacles with better visualization
-        if obstacles:
-            for obs in obstacles[:15]:  # Draw first 15 obstacles
+        # Draw obstacles - only show obstacles ahead of fly (first-person view)
+        if obstacles and fly_position is not None:
+            fly_z = fly_position[2]
+            # Filter obstacles that are ahead of fly (z > fly_z)
+            visible_obstacles = [obs for obs in obstacles if obs['position'][2] > fly_z]
+            
+            # Draw first 15 visible obstacles (what fly can see ahead)
+            for obs in visible_obstacles[:15]:
                 ox, oy, oz = obs['position']
                 obs_size = obs['size']
                 
-                # Perspective scaling based on depth
-                depth_scale = 1.0 + (oz / 100.0) * 0.5
+                # Perspective scaling based on distance from fly
+                distance = oz - fly_z
+                if distance < 5:  # Too close, skip
+                    continue
+                depth_scale = 1.0 + (distance / 100.0) * 0.5
                 scaled_size = obs_size * scale * depth_scale
                 
-                # Project obstacle position
+                # Project obstacle position relative to fly
+                relative_z = oz - fly_z
                 proj_ox = center_x + ox * scale * depth_scale
-                proj_oy = center_y + oy * scale * depth_scale + oz * 2
+                proj_oy = center_y + oy * scale * depth_scale + relative_z * 2
                 
-                # Draw obstacle based on type - SOLID
-                color = "#FF4444" if obs['has_hole'] else "#FF8800"
+                # Fade out distant obstacles
+                opacity = max(0.3, 1.0 - (distance / 100.0))
+                
+                # Draw obstacle based on type - adjust opacity based on distance
+                base_color = "#FF4444" if obs['has_hole'] else "#FF8800"
                 outline = "#FFFFFF" if obs['has_hole'] else "#FFFF00"
+                
+                # Blend color with background for distance fade
+                if opacity < 1.0:
+                    # Create semi-transparent effect by using lighter color
+                    color_int = int(opacity * 255)
+                    color = f"#{color_int:02x}{color_int//2:02x}{color_int//3:02x}"
+                else:
+                    color = base_color
                 
                 if obs['type'] == 'cube':
                     self.viz_canvas.create_rectangle(
@@ -407,52 +429,34 @@ class FruitFlyRacerGUI:
                         fill="#000000", outline="#FFFFFF", width=2
                     )
         
-        # Draw fly with better visualization
+        # Draw fly with first-person POV (fly is at camera position)
         if fly_position is not None:
             fx, fy, fz = fly_position
             depth_scale = 1.0 + (fz / 100.0) * 0.5
             proj_fx = center_x + fx * scale * depth_scale
             proj_fy = center_y + fy * scale * depth_scale + fz * 2
             
-            # Draw fly body (larger, more visible)
-            fly_size = 8 * depth_scale
+            # In first-person POV, fly is small at bottom of screen (we see through its eyes)
+            # Draw fly indicator at bottom center (like crosshair)
             self.viz_canvas.create_oval(
-                proj_fx - fly_size, proj_fy - fly_size,
-                proj_fx + fly_size, proj_fy + fly_size,
-                fill="yellow", outline="white", width=3
+                center_x - 10, height - 50,
+                center_x + 10, height - 30,
+                fill="yellow", outline="white", width=2
+            )
+            self.viz_canvas.create_text(
+                center_x, height - 40,
+                text="🪰", font=("Arial", 20)
             )
             
-            # Draw wings
-            wing_color = "cyan"
-            self.viz_canvas.create_oval(
-                proj_fx - fly_size * 1.5, proj_fy - fly_size * 0.5,
-                proj_fx + fly_size * 0.5, proj_fy + fly_size * 0.5,
-                fill=wing_color, outline="white", width=2
-            )
-            self.viz_canvas.create_oval(
-                proj_fx - fly_size * 1.5, proj_fy - fly_size * 1.5,
-                proj_fx + fly_size * 0.5, proj_fy - fly_size * 0.5,
-                fill=wing_color, outline="white", width=2
-            )
-            
-            # Draw direction indicator
+            # Draw forward direction indicator (where fly is looking)
             self.viz_canvas.create_line(
-                proj_fx, proj_fy,
-                proj_fx + 15, proj_fy,
-                fill="white", width=3, arrow=tk.LAST
+                center_x, height - 60,
+                center_x, height - 100,
+                fill="cyan", width=3, arrow=tk.LAST
             )
             
-            # Draw eyes
-            self.viz_canvas.create_oval(
-                proj_fx + 3, proj_fy - 3,
-                proj_fx + 6, proj_fy,
-                fill="red", outline="white"
-            )
-            self.viz_canvas.create_oval(
-                proj_fx + 3, proj_fy + 3,
-                proj_fx + 6, proj_fy,
-                fill="red", outline="white"
-            )
+            # Draw obstacles ahead (what fly sees)
+            # Obstacles in front (z > fly_z) are what the fly sees
         
         # Draw finish line (more visible)
         finish_z = 50
