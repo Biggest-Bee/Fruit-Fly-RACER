@@ -81,6 +81,7 @@ class FruitFlyRacerGUI:
         key = event.keysym
         speed = 0.5
         
+        # WASD for forward/backward/left/right
         if key == 'w' or key == 'W':
             self.fly_velocity[2] += speed  # Forward
         elif key == 's' or key == 'S':
@@ -89,9 +90,11 @@ class FruitFlyRacerGUI:
             self.fly_velocity[0] -= speed  # Left
         elif key == 'd' or key == 'D':
             self.fly_velocity[0] += speed  # Right
-        elif key == 'q' or key == 'Q':
+        # Space for up
+        elif key == 'space' or key == 'Space':
             self.fly_velocity[1] += speed  # Up
-        elif key == 'e' or key == 'E':
+        # Ctrl+S for down
+        elif key == 's' and event.state & 0x4:  # Ctrl key held
             self.fly_velocity[1] -= speed  # Down
         
         # Clamp velocity
@@ -106,8 +109,10 @@ class FruitFlyRacerGUI:
             self.fly_velocity[2] = 0.5  # Maintain slight forward momentum
         elif key in ['a', 'A', 'd', 'D']:
             self.fly_velocity[0] = 0.0
-        elif key in ['q', 'Q', 'e', 'E']:
-            self.fly_velocity[1] = 0.0
+        elif key == 'space' or key == 'Space':
+            self.fly_velocity[1] = 0.0  # Stop vertical movement
+        elif key == 's' and event.state & 0x4:  # Ctrl+S released
+            self.fly_velocity[1] = 0.0  # Stop downward movement
     
     def start_fly_animation(self):
         """Start fly animation loop"""
