@@ -193,7 +193,7 @@ class AgentLogic:
         Returns:
         Layout vector (20 nearest obstacles)
         """
-        layout = np.zeros(20)
+        layout = np.zeros(20)  # 20 obstacles, flattened to fit input space
         
         # Get relative positions of 20 nearest obstacles
         distances = []
@@ -205,10 +205,8 @@ class AgentLogic:
         
         for i in range(min(20, len(distances))):
             _, rel_pos = distances[i]
-            # Normalize position
-            layout[i*3] = rel_pos[0] / 10.0
-            layout[i*3+1] = rel_pos[1] / 10.0
-            layout[i*3+2] = rel_pos[2] / 50.0
+            # Normalize position - store only distance for now (simplified)
+            layout[i] = min(1.0, np.linalg.norm(rel_pos) / 50.0)
         
         return layout
     

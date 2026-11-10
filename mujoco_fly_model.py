@@ -73,16 +73,17 @@ class MuJoCoFlyModel:
             raise
     
     def load_connectome(self):
-        """Load MaleCNS v1.0 connectome if available"""
+        """Load MaleCNS v1.0 connectome if available (limited for performance)"""
         try:
             import pandas as pd
             connectome_file = "data/connectome-weights-male-cns-v1.0-minconf-0.5.feather"
-            
+
             if os.path.exists(connectome_file):
                 print(f"Loading connectome from {connectome_file}")
                 weights_df = pd.read_feather(connectome_file)
-                self.connectome_weights = weights_df.values
-                print(f"Loaded connectome: {self.connectome_weights.shape}")
+                # Limit connectome size for performance (use first 1000 rows)
+                self.connectome_weights = weights_df.values[:1000, :]
+                print(f"Loaded connectome (limited): {self.connectome_weights.shape}")
                 return True
             else:
                 print("Connectome file not found")
@@ -115,13 +116,29 @@ class MuJoCoFlyModel:
                     neural_inputs = padded_inputs
                 
                 # Process through connectome
-                # Output split: first 3 for velocity (x,y,z), next 2 for turn (yaw,pitch)
-                motor_output = np.dot(neural_inputs, self.connectome_weights[:len(neural_inputs), :5])
-                
+                # Connectome has limited output dimensions, so use available columns
+                num_outputs = min(5, self.connectome_weights.shape[1])
+                motor_output = np.dot(neural_inputs, self.connectome_weights[:len(neural_inputs), :num_outputs])
+
                 # Extract velocity and turn commands
-                desired_velocity = motor_output[:3] * self.max_speed  # Scale to max speed
-                desired_turn = motor_output[3:5]  # yaw, pitch
-                
+                if num_outputs >= 3:
+                    # Normalize motor output to reasonable range before scaling
+                    motor_output = np.tanh(motor_output)  # Normalize to [-1, 1]
+                    desired_velocity = motor_output[:3] * self.max_speed
+                    # Ensure forward motion (positive z direction along tunnel)
+                    if desired_velocity[2] < 0:
+                        desired_velocity[2] = abs(desired_velocity[2])  # Flip to forward
+                else:
+                    desired_velocity = np.zeros(3)
+                    desired_velocity[2] = 0.5 * self.max_speed  # Default forward
+
+                if num_outputs >= 5:
+                    desired_turn = np.tanh(motor_output[3:5]) * 1.0  # Normalize to [-1, 1]
+                elif num_outputs >= 4:
+                    desired_turn = np.array([np.tanh(motor_output[3]), 0.0])  # Only yaw available
+                else:
+                    desired_turn = np.array([0.0, 0.0])  # No turn control available
+
                 return desired_velocity, desired_turn
             except Exception as e:
                 print(f"Error processing through connectome: {e}")
@@ -219,28 +236,22 @@ class MuJoCoFlyModel:
     
     def step(self, dt: float = 0.02, desired_velocity=None, desired_turn=None):
         """
-        Step the physics simulation forward with realistic constraints
-        
+        Step the physics simulation forward
+
         Args:
             dt: Time step in seconds
-            desired_velocity: Optional target velocity from neural network
-            desired_turn: Optional target (yaw, pitch) from neural network
+            desired_velocity: Optional target velocity from neural network (ignored for now)
+            desired_turn: Optional target (yaw, pitch) from neural network (ignored for now)
         """
         if self.model is None or self.data is None:
             raise RuntimeError("Model not loaded. Call load_official_flybody() first.")
-        
-        # Apply realistic physics if neural control provided
-        if desired_velocity is not None:
-            self.apply_acceleration(desired_velocity, dt)
-        
-        if desired_turn is not None:
-            self.apply_turn(desired_turn[0], desired_turn[1], dt)
-        
-        # Apply drag (gradual deceleration)
-        self.apply_drag(dt)
-        
+
+        # Let MuJoCo handle physics naturally
+        # The flybody model has actuators that control wing/leg movements
+        # Neural network should output actuator commands, not velocity/turn
+
         # Step MuJoCo physics
-        mujoco.mj_step(self.model, self.data, dt)
+        mujoco.mj_step(self.model, self.data)
     
     def reset(self):
         """Reset the simulation to initial state"""

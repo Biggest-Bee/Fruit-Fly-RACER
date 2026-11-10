@@ -8,6 +8,7 @@ import os
 import time
 from typing import Dict, Optional
 import sys
+import mujoco
 
 # Import modules
 from environment import RacingEnvironment
@@ -129,10 +130,17 @@ class FruitFlyRacer:
         self.fly_model.reset()
         
         # Initialize fly position (start of tunnel)
-        # Set MuJoCo fly position
+        # Set MuJoCo fly position - official flybody has 109 DOF
         if self.fly_model.data is not None:
-            self.fly_model.data.qpos = np.array([0.0, 0.0, -self.environment.tunnel_length / 2, 0, 0, 0, 0])  # x, y, z, rotations
-            self.fly_model.data.qvel = np.zeros_like(self.fly_model.data.qvel)
+            # Reset all DOF to zero, then set position
+            self.fly_model.data.qpos[:] = 0.0
+            self.fly_model.data.qvel[:] = 0.0
+            # Set position at start of tunnel (first 3 DOF are usually position)
+            self.fly_model.data.qpos[0] = 0.0  # x
+            self.fly_model.data.qpos[1] = 0.0  # y
+            # Start at beginning of tunnel (tunnel goes from -tunnel_length/2 to +tunnel_length/2)
+            # Fly should move toward +z (finish line)
+            self.fly_model.data.qpos[2] = -self.environment.tunnel_length / 2 + 2.0  # z (start, 2m from start line)
         
         dt = 0.02  # Time step (50 Hz)
         max_steps = int(self.environment.tunnel_length / (self.environment.max_speed * dt)) * 2
@@ -176,9 +184,33 @@ class FruitFlyRacer:
             # Get desired velocity and turn from fly model's neural control
             # The connectome decides where to fly (not keyboard presses)
             desired_velocity, desired_turn = self.fly_model.connect_to_neural_network(neural_inputs)
-            
-            # Step MuJoCo physics with realistic constraints
-            self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
+
+            # Direct position control for racing (bypass complex flybody physics)
+            # The fly moves through the tunnel based on neural decisions
+            if self.fly_model.data is not None:
+                # Move forward based on desired velocity
+                speed = np.linalg.norm(desired_velocity)
+                if speed > 0.1:  # Only move if there's meaningful velocity
+                    direction = desired_velocity / speed
+                    # Move forward along tunnel (z-axis) - ensure positive z direction
+                    forward_speed = abs(direction[2]) * speed
+                    self.fly_model.data.qpos[2] += forward_speed * dt
+                    self.fly_model.data.qvel[2] = forward_speed
+
+                    # Apply lateral movement (x, y)
+                    self.fly_model.data.qpos[0] += direction[0] * speed * dt * 0.5
+                    self.fly_model.data.qpos[1] += direction[1] * speed * dt * 0.5
+
+                    # Apply turn
+                    if len(desired_turn) >= 2:
+                        self.fly_model.data.qpos[0] += desired_turn[0] * dt * 2.0  # yaw affects x
+                        self.fly_model.data.qpos[1] += desired_turn[1] * dt * 2.0  # pitch affects y
+
+                    # Update visual position
+                    mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
+            else:
+                # Fallback: simple forward movement
+                self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
             
             # Update wind
             wind = self.environment.update_wind(step * dt)
