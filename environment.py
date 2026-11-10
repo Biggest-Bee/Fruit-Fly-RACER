@@ -65,7 +65,12 @@ class RacingEnvironment:
         # Clear obstacles (will be regenerated)
         self.obstacles = []
 
-        print("Environment reset")
+        # Only print on first reset
+        if not hasattr(self, '_reset_count'):
+            self._reset_count = 0
+        self._reset_count += 1
+        if self._reset_count == 1:
+            print("Environment reset")
     
     def generate_tunnel_mjcf(self) -> str:
         """
@@ -156,7 +161,9 @@ class RacingEnvironment:
             
             self.obstacles.append(obstacle)
         
-        print(f"Generated {num_obstacles} obstacles with holes: {with_holes}")
+        # Count obstacles with holes
+        hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
+        print(f"Generated {num_obstacles} obstacles ({hole_count} with holes, {num_obstacles - hole_count} without)")
         return self.obstacles
     
     def get_obstacle_mjcf(self, obstacle: Dict) -> str:

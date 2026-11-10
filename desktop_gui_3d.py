@@ -201,26 +201,36 @@ class FruitFlyRacer3D:
             self.start_mujoco_viewer()
             
             # Run simulation loop
+            episode_count = 0
             while self.simulation_running and self.current_simulation < self.num_simulations:
                 self.current_simulation += 1
-                
+                episode_count += 1
+
+                # Only log every 10 episodes to reduce spam
+                if episode_count % 10 == 1:
+                    self.log(f"Episode {episode_count}: Starting...")
+
                 # Run one simulation episode
                 result = self.run_single_episode()
-                
+
                 # Update best scores
                 if result['score'] > self.best_score:
                     self.best_score = result['score']
                     self.best_progress = result['progress']
-                
-                # Update GUI
-                self.root.after(0, self.update_status)
-                
-                # Regenerate obstacles for next episode
-                self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
-                self.update_mujoco_scene()
-                
+                    self.log(f"New best! Score: {self.best_score:.1f}, Progress: {self.best_progress:.1%}")
+
+                # Update GUI every 10 episodes
+                if episode_count % 10 == 0:
+                    self.root.after(0, self.update_status)
+                    self.log(f"Completed {episode_count} episodes. Best: {self.best_score:.1f}")
+
+                # Regenerate obstacles for next episode (only log occasionally)
+                if episode_count % 10 == 1:
+                    self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                    self.update_mujoco_scene()
+
                 # Small delay to prevent CPU overload
-                time.sleep(0.01)
+                time.sleep(0.1)  # Increased delay
             
             self.root.after(0, self.simulation_complete)
             
@@ -233,7 +243,7 @@ class FruitFlyRacer3D:
     def run_single_episode(self):
         """Run a single simulation episode"""
         try:
-            # Reset environment
+            # Reset environment (only log occasionally)
             self.environment.reset()
             self.rewards.reset()
             
@@ -255,11 +265,35 @@ class FruitFlyRacer3D:
                 # Get neural inputs
                 neural_inputs = self.agent.get_neural_inputs(self.environment.obstacles, wind)
                 
-                # Get neural control from fly model
-                desired_velocity, desired_turn = self.fly_model.connect_to_neural_network(neural_inputs)
-                
-                # Step physics with realistic constraints
-                self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
+                # Get neural control from fly model (returns actuator commands)
+                actuator_commands = self.fly_model.connect_to_neural_network(neural_inputs)
+
+                # Apply actuator commands to the fly
+                self.fly_model.apply_neural_control(actuator_commands)
+
+                # Step MuJoCo physics
+                self.fly_model.step(dt)
+
+                # Hybrid approach: gentle forward guidance
+                if self.fly_model.data is not None:
+                    target_speed = self.environment.max_speed * 0.8
+                    self.fly_model.data.qpos[2] += target_speed * dt
+                    self.fly_model.data.qvel[2] = target_speed
+
+                    # Constrain to tunnel radius
+                    x, y, z = self.fly_model.data.qpos[:3]
+                    radius = np.sqrt(x**2 + y**2)
+                    max_radius = self.environment.tunnel_radius * 0.8
+                    if radius > max_radius:
+                        scale = max_radius / radius
+                        self.fly_model.data.qpos[0] = x * scale
+                        self.fly_model.data.qpos[1] = y * scale
+                        self.fly_model.data.qvel[0] *= 0.5
+                        self.fly_model.data.qvel[1] *= 0.5
+
+                    mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
+                    position = self.fly_model.data.qpos[:3]
+                    velocity = self.fly_model.data.qvel[:3]
                 
                 # Check collision
                 if self.environment.check_collision(position):

@@ -87,7 +87,12 @@ class RewardSystem:
         self.total_points = 0.0
         self.collision_count = 0
         self.best_progress = 0.0
-        print("Reward system reset")
+        # Only print on first reset
+        if not hasattr(self, '_reset_count'):
+            self._reset_count = 0
+        self._reset_count += 1
+        if self._reset_count == 1:
+            print("Reward system reset")
 
 
 if __name__ == "__main__":
