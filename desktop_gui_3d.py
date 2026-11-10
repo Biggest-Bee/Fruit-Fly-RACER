@@ -243,10 +243,33 @@ class FruitFlyRacer3D:
     def run_simulation(self):
         """Run the simulation loop"""
         try:
-            # Generate obstacles
+            # Generate obstacles with error handling
             self.log("Generating obstacles...")
-            self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
-            self.log(f"Generated {len(self.environment.obstacles)} obstacles")
+            try:
+                obstacles = self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                self.log(f"Successfully generated {len(obstacles)} obstacles")
+
+                # Validate obstacles
+                invalid_count = 0
+                for i, obs in enumerate(obstacles):
+                    try:
+                        if not self.environment._validate_obstacle(obs):
+                            invalid_count += 1
+                            self.log(f"WARNING: Obstacle {i} failed validation")
+                    except Exception as e:
+                        invalid_count += 1
+                        self.log(f"ERROR validating obstacle {i}: {e}")
+
+                if invalid_count > 0:
+                    self.log(f"WARNING: {invalid_count} obstacles failed validation")
+                else:
+                    self.log("All obstacles validated successfully")
+
+            except Exception as e:
+                self.log(f"ERROR generating obstacles: {e}")
+                import traceback
+                self.log(f"Traceback: {traceback.format_exc()}")
+                return
 
             # Create MuJoCo scene with tunnel and obstacles
             self.create_mujoco_scene()
@@ -302,11 +325,16 @@ class FruitFlyRacer3D:
 
                 # Regenerate obstacles for next episode (only log occasionally)
                 if episode_count % 10 == 1:
-                    self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
-                    self.update_mujoco_scene()
-                    # Log obstacle generation
-                    hole_count = sum(1 for obs in self.environment.obstacles if obs.get('has_hole', False))
-                    self.log(f"Generated {len(self.environment.obstacles)} new obstacles ({hole_count} with holes)")
+                    try:
+                        self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                        self.update_mujoco_scene()
+                        # Log obstacle generation
+                        hole_count = sum(1 for obs in self.environment.obstacles if obs.get('has_hole', False))
+                        self.log(f"Generated {len(self.environment.obstacles)} new obstacles ({hole_count} with holes)")
+                    except Exception as e:
+                        self.log(f"ERROR regenerating obstacles: {e}")
+                        import traceback
+                        self.log(f"Traceback: {traceback.format_exc()}")
 
                 # Small delay to prevent CPU overload
                 time.sleep(0.1)  # Increased delay

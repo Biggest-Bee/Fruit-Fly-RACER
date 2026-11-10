@@ -126,45 +126,125 @@ class RacingEnvironment:
     def generate_obstacles(self, num_obstacles: int = 20, with_holes: bool = True):
         """
         Procedurally generate obstacles in the tunnel
-        
+
         Args:
             num_obstacles: Number of obstacles to generate
             with_holes: Whether to include holes/apertures in obstacles
+
+        Returns:
+            List of obstacle dictionaries
         """
         self.obstacles = []
-        
-        for i in range(num_obstacles):
-            # Random position along tunnel
-            z_pos = random.uniform(-self.tunnel_length/2 + 5, self.tunnel_length/2 - 5)
-            
-            # Random obstacle type
-            obs_type = random.choice(self.obstacle_types)
-            
-            # Random position within tunnel
-            angle = random.uniform(0, 2 * math.pi)
-            radius = random.uniform(0, self.tunnel_radius * 0.8)
-            x = radius * math.cos(angle)
-            y = radius * math.sin(angle)
-            
-            # Random size
-            size = random.uniform(0.5, 2.0)
-            
-            # Generate obstacle
-            obstacle = {
-                'type': obs_type,
-                'position': np.array([x, y, z_pos]),
-                'size': size,
-                'rotation': random.uniform(0, 2 * math.pi),
-                'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
-                'hole_size': random.uniform(0.2, 0.5) if with_holes else 0.0
-            }
-            
-            self.obstacles.append(obstacle)
-        
+        errors = []
+
+        try:
+            for i in range(num_obstacles):
+                try:
+                    # Random position along tunnel
+                    z_pos = random.uniform(-self.tunnel_length/2 + 5, self.tunnel_length/2 - 5)
+
+                    # Random obstacle type
+                    obs_type = random.choice(self.obstacle_types)
+
+                    # Random position within tunnel
+                    angle = random.uniform(0, 2 * math.pi)
+                    radius = random.uniform(0, self.tunnel_radius * 0.8)
+                    x = radius * math.cos(angle)
+                    y = radius * math.sin(angle)
+
+                    # Random size
+                    size = random.uniform(0.5, 2.0)
+
+                    # Generate obstacle
+                    obstacle = {
+                        'type': obs_type,
+                        'position': np.array([x, y, z_pos]),
+                        'size': size,
+                        'rotation': random.uniform(0, 2 * math.pi),
+                        'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
+                        'hole_size': random.uniform(0.2, 0.5) if with_holes else 0.0
+                    }
+
+                    # Validate obstacle
+                    if not self._validate_obstacle(obstacle):
+                        errors.append(f"Obstacle {i} failed validation: {obstacle}")
+                        continue
+
+                    self.obstacles.append(obstacle)
+
+                except Exception as e:
+                    errors.append(f"Error generating obstacle {i}: {e}")
+                    continue
+
+        except Exception as e:
+            errors.append(f"Critical error in generate_obstacles: {e}")
+            import traceback
+            errors.append(traceback.format_exc())
+
         # Count obstacles with holes
         hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
-        print(f"Generated {num_obstacles} obstacles ({hole_count} with holes, {num_obstacles - hole_count} without)")
+
+        # Log results
+        if errors:
+            print(f"ERRORS during obstacle generation:")
+            for error in errors:
+                print(f"  - {error}")
+
+        print(f"Generated {len(self.obstacles)} obstacles ({hole_count} with holes, {len(self.obstacles) - hole_count} without)")
+
+        # Log first few obstacles for debugging
+        if self.obstacles:
+            print(f"First 3 obstacles:")
+            for i, obs in enumerate(self.obstacles[:3]):
+                print(f"  {i}: type={obs['type']}, pos={obs['position']}, size={obs['size']:.2f}, has_hole={obs['has_hole']}")
+
         return self.obstacles
+
+    def _validate_obstacle(self, obstacle: Dict) -> bool:
+        """
+        Validate obstacle parameters
+
+        Args:
+            obstacle: Obstacle dictionary
+
+        Returns:
+            True if valid, False otherwise
+        """
+        try:
+            # Check required fields
+            required_fields = ['type', 'position', 'size', 'rotation', 'has_hole', 'hole_size']
+            for field in required_fields:
+                if field not in obstacle:
+                    print(f"Missing field: {field}")
+                    return False
+
+            # Check position is within tunnel
+            pos = obstacle['position']
+            if abs(pos[0]) > self.tunnel_radius * 0.9:
+                print(f"Obstacle X position out of bounds: {pos[0]}")
+                return False
+            if abs(pos[1]) > self.tunnel_radius * 0.9:
+                print(f"Obstacle Y position out of bounds: {pos[1]}")
+                return False
+            if abs(pos[2]) > self.tunnel_length / 2:
+                print(f"Obstacle Z position out of bounds: {pos[2]}")
+                return False
+
+            # Check size is reasonable
+            if obstacle['size'] < 0.1 or obstacle['size'] > 5.0:
+                print(f"Obstacle size out of range: {obstacle['size']}")
+                return False
+
+            # Check hole size is reasonable
+            if obstacle['has_hole'] and (obstacle['hole_size'] < 0.1 or obstacle['hole_size'] > 1.0):
+                print(f"Hole size out of range: {obstacle['hole_size']}")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Validation error: {e}")
+            return False
     
     def get_obstacle_mjcf(self, obstacle: Dict) -> str:
         """
