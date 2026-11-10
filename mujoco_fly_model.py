@@ -75,6 +75,17 @@ class MuJoCoFlyModel:
                     assets_dir = os.path.join(flybody_path, 'flybody', 'fruitfly', 'assets')
                     xml_string = xml_string.replace('file="', f'file="{assets_dir}/')
 
+                    # Add floor and lighting for visualization
+                    if '<floor' not in xml_string:
+                        floor_xml = '''
+        <!-- Floor for visualization -->
+        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.8 0.8 0.8 1"/>
+        <!-- Lighting -->
+        <light name="key" pos="0 -5 10" dir="0 1 -1" diffuse="0.8 0.8 0.8"/>
+        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.4 0.4 0.4"/>
+'''
+                        xml_string = xml_string.replace('</worldbody>', floor_xml + '</worldbody>')
+
                     # Load the XML string with MuJoCo
                     self.model = mujoco.MjModel.from_xml_string(xml_string)
                     self.data = mujoco.MjData(self.model)
@@ -90,7 +101,22 @@ class MuJoCoFlyModel:
                 if not os.path.exists(flybody_xml):
                     raise FileNotFoundError(f"flybody XML not found at {flybody_xml}")
 
-                self.model = mujoco.MjModel.from_xml_path(flybody_xml)
+                # Read XML and add floor/lighting
+                with open(flybody_xml, 'r') as f:
+                    xml_content = f.read()
+
+                # Add floor and lighting if not present
+                if '<floor' not in xml_content:
+                    floor_xml = '''
+        <!-- Floor for visualization -->
+        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.8 0.8 0.8 1"/>
+        <!-- Lighting -->
+        <light name="key" pos="0 -5 10" dir="0 1 -1" diffuse="0.8 0.8 0.8"/>
+        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.4 0.4 0.4"/>
+'''
+                    xml_content = xml_content.replace('</worldbody>', floor_xml + '</worldbody>')
+
+                self.model = mujoco.MjModel.from_xml_string(xml_content)
                 self.data = mujoco.MjData(self.model)
                 print("Loaded official flybody using direct XML")
 
@@ -246,18 +272,28 @@ class MuJoCoFlyModel:
 
         Args:
             dt: Time step in seconds
-            desired_velocity: Optional target velocity from neural network (ignored for now)
-            desired_turn: Optional target (yaw, pitch) from neural network (ignored for now)
+            desired_velocity: Optional target velocity from neural network
+            desired_turn: Optional target (yaw, pitch) from neural network
         """
         if self.model is None or self.data is None:
             raise RuntimeError("Model not loaded. Call load_official_flybody() first.")
 
-        # Let MuJoCo handle physics naturally
-        # The flybody model has actuators that control wing/leg movements
-        # Neural network should output actuator commands, not velocity/turn
+        # Apply flight force (virtual wing flapping)
+        # Since flybody is a walking model, we add forward thrust
+        if desired_velocity is not None:
+            # Apply forward force in z direction (through tunnel)
+            forward_force = desired_velocity[2] * 10.0  # Scale force
+            self.data.qfrc_applied[2] += forward_force
+
+            # Add some lift to keep fly airborne
+            lift_force = 5.0  # Constant upward force
+            self.data.qfrc_applied[2] += lift_force
 
         # Step MuJoCo physics
         mujoco.mj_step(self.model, self.data)
+
+        # Clear applied forces
+        self.data.qfrc_applied[:] = 0.0
     
     def reset(self):
         """Reset the simulation to initial state"""

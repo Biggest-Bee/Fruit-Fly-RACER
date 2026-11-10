@@ -315,27 +315,15 @@ class FruitFlyRacer3D:
                 # Apply actuator commands to the fly
                 self.fly_model.apply_neural_control(actuator_commands)
 
-                # Step MuJoCo physics
-                self.fly_model.step(dt)
+                # Generate desired velocity for flight (forward + slight lift)
+                desired_velocity = np.array([0.0, 0.0, self.environment.max_speed * 0.8])  # Forward at 80% max speed
+                desired_turn = np.array([0.0, 0.0])  # No turning for now
 
-                # Hybrid approach: gentle forward guidance
+                # Step MuJoCo physics with flight force
+                self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
+
+                # Get updated position from physics
                 if self.fly_model.data is not None:
-                    target_speed = self.environment.max_speed * 0.8
-                    self.fly_model.data.qpos[2] += target_speed * dt
-                    self.fly_model.data.qvel[2] = target_speed
-
-                    # Constrain to tunnel radius
-                    x, y, z = self.fly_model.data.qpos[:3]
-                    radius = np.sqrt(x**2 + y**2)
-                    max_radius = self.environment.tunnel_radius * 0.8
-                    if radius > max_radius:
-                        scale = max_radius / radius
-                        self.fly_model.data.qpos[0] = x * scale
-                        self.fly_model.data.qpos[1] = y * scale
-                        self.fly_model.data.qvel[0] *= 0.5
-                        self.fly_model.data.qvel[1] *= 0.5
-
-                    mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
                     position = self.fly_model.data.qpos[:3]
                     velocity = self.fly_model.data.qvel[:3]
                 
