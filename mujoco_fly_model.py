@@ -102,24 +102,11 @@ class MuJoCoFlyModel:
             raise
     
     def load_connectome(self):
-        """Load MaleCNS v1.0 connectome if available (limited for performance)"""
-        try:
-            import pandas as pd
-            connectome_file = "data/connectome-weights-male-cns-v1.0-minconf-0.5.feather"
-
-            if os.path.exists(connectome_file):
-                print(f"Loading connectome from {connectome_file}")
-                weights_df = pd.read_feather(connectome_file)
-                # Limit connectome size for performance (use first 1000 rows)
-                self.connectome_weights = weights_df.values[:1000, :]
-                print(f"Loaded connectome (limited): {self.connectome_weights.shape}")
-                return True
-            else:
-                print("Connectome file not found")
-                return False
-        except Exception as e:
-            print(f"Error loading connectome: {e}")
-            return False
+        """Load MaleCNS v1.0 connectome if available (disabled for performance)"""
+        # Disable connectome loading - it's too large for this system
+        print("Connectome loading disabled (too large for system memory)")
+        self.connectome_weights = None
+        return False
     
     def connect_to_neural_network(self, neural_inputs: np.ndarray) -> np.ndarray:
         """

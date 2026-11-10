@@ -255,16 +255,19 @@ class RacingEnvironment:
         if np.sqrt(x**2 + y**2) > self.tunnel_radius:
             return True
         
-        # Check obstacles
+        # Check obstacles (more lenient collision detection)
         for obstacle in self.obstacles:
             obs_pos = obstacle['position']
             obs_size = obstacle['size']
-            
-            # Simple bounding box collision
-            if (abs(x - obs_pos[0]) < obs_size and
-                abs(y - obs_pos[1]) < obs_size and
-                abs(z - obs_pos[2]) < obs_size):
-                
+
+            # Only check obstacles ahead of the fly
+            if obs_pos[2] > z + 2.0:  # Skip obstacles behind or too close
+                continue
+
+            # Simple distance-based collision (less aggressive)
+            distance = np.linalg.norm(position - obs_pos)
+            if distance < obs_size * 0.5:  # Reduced collision radius
+
                 # Check if hole (pass through)
                 if obstacle['has_hole']:
                     hole_pos = obs_pos + np.array([obstacle['hole_size'] * 0.5, 0, 0])

@@ -107,7 +107,11 @@ class FruitFlyRacer:
         # Simulation state
         self.simulation_running = False
         self.simulation_paused = False
-        
+        self.best_score = 0.0
+        self.best_progress = 0.0
+        self.total_simulations = 0
+        self.completed_simulations = 0
+
         print("Fruit Fly Racer initialized")
     
     def run_single_simulation(self) -> Dict:
@@ -197,6 +201,20 @@ class FruitFlyRacer:
                 target_speed = self.environment.max_speed * 0.8  # 80% of max speed
                 self.fly_model.data.qpos[2] += target_speed * dt  # Forward movement
                 self.fly_model.data.qvel[2] = target_speed  # Set velocity
+
+                # Constrain fly to stay within tunnel radius
+                x, y, z = self.fly_model.data.qpos[:3]
+                radius = np.sqrt(x**2 + y**2)
+                max_radius = self.environment.tunnel_radius * 0.8  # Stay well inside tunnel
+
+                if radius > max_radius:
+                    # Scale position to stay within tunnel
+                    scale = max_radius / radius
+                    self.fly_model.data.qpos[0] = x * scale
+                    self.fly_model.data.qpos[1] = y * scale
+                    # Reduce lateral velocity
+                    self.fly_model.data.qvel[0] *= 0.5
+                    self.fly_model.data.qvel[1] *= 0.5
 
                 # Update visual position
                 mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
