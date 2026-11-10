@@ -258,9 +258,22 @@ class FruitFlyRacer3D:
 
                 # Only log every 10 episodes to reduce spam
                 if episode_count % 10 == 1:
-                    self.log(f"Episode {episode_count}: Starting...")
+                    self.log(f"=== Episode {episode_count} ===")
                     self.log(f"Environment: {len(self.environment.obstacles)} obstacles")
                     self.log(f"Fly model: {self.fly_model.model.nq} DOF, {self.fly_model.model.nu} actuators")
+                    self.log(f"Tunnel: {self.environment.tunnel_length}m long, {self.environment.tunnel_radius}m radius")
+
+                    # Log obstacle details
+                    hole_count = sum(1 for obs in self.environment.obstacles if obs.get('has_hole', False))
+                    self.log(f"Obstacles: {len(self.environment.obstacles)} total, {hole_count} with holes, {len(self.environment.obstacles) - hole_count} without")
+
+                    # Log obstacle types
+                    types = {}
+                    for obs in self.environment.obstacles:
+                        obs_type = obs.get('type', 'unknown')
+                        types[obs_type] = types.get(obs_type, 0) + 1
+                    self.log(f"Obstacle types: {types}")
+                    self.log("===================")
 
                 # Run one simulation episode
                 episode_start = time.time()
@@ -287,6 +300,9 @@ class FruitFlyRacer3D:
                 if episode_count % 10 == 1:
                     self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
                     self.update_mujoco_scene()
+                    # Log obstacle generation
+                    hole_count = sum(1 for obs in self.environment.obstacles if obs.get('has_hole', False))
+                    self.log(f"Generated {len(self.environment.obstacles)} new obstacles ({hole_count} with holes)")
 
                 # Small delay to prevent CPU overload
                 time.sleep(0.1)  # Increased delay
@@ -412,7 +428,7 @@ class FruitFlyRacer3D:
             traceback.print_exc()
 
     def draw_tunnel(self):
-        """Draw the tunnel in 3D"""
+        """Draw the tunnel in 3D - horizontal cylinder along X-axis"""
         # Clear previous tunnel
         for line in self.ax.lines[:]:
             line.remove()
@@ -421,37 +437,38 @@ class FruitFlyRacer3D:
         for poly in self.ax.collections[:]:
             poly.remove()
 
-        # Draw tunnel as cylinder
+        # Draw tunnel as horizontal cylinder along X-axis
         tunnel_length = self.environment.tunnel_length
         tunnel_radius = self.environment.tunnel_radius
 
-        # Create cylinder surface
+        # Create cylinder surface - horizontal along X-axis
         theta = np.linspace(0, 2*np.pi, 100)
-        z = np.linspace(-tunnel_length/2, tunnel_length/2, 50)
+        x = np.linspace(-tunnel_length/2, tunnel_length/2, 50)
 
-        # Create meshgrid for cylinder
-        theta_grid, z_grid = np.meshgrid(theta, z)
-        x_grid = tunnel_radius * np.cos(theta_grid)
-        y_grid = tunnel_radius * np.sin(theta_grid)
+        # Create meshgrid for cylinder (Y-Z plane cross-section, X is length)
+        theta_grid, x_grid = np.meshgrid(theta, x)
+        y_grid = tunnel_radius * np.cos(theta_grid)
+        z_grid = tunnel_radius * np.sin(theta_grid)
 
         # Draw cylinder walls (semi-transparent)
         self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.3, color='blue', edgecolor='none')
 
         # Draw tunnel end caps (start and finish)
-        # Start cap
+        # Start cap (X = -tunnel_length/2)
         theta_cap = np.linspace(0, 2*np.pi, 50)
-        x_cap = tunnel_radius * np.cos(theta_cap)
-        y_cap = tunnel_radius * np.sin(theta_cap)
-        z_cap = np.full_like(theta_cap, -tunnel_length/2)
+        y_cap = tunnel_radius * np.cos(theta_cap)
+        z_cap = tunnel_radius * np.sin(theta_cap)
+        x_cap = np.full_like(theta_cap, -tunnel_length/2)
         self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=2, label='Start')
 
-        # Finish cap
-        z_cap_finish = np.full_like(theta_cap, tunnel_length/2)
-        self.ax.plot(x_cap, y_cap, z_cap_finish, color='green', linewidth=2, label='Finish')
+        # Finish cap (X = +tunnel_length/2)
+        x_cap_finish = np.full_like(theta_cap, tunnel_length/2)
+        self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=2, label='Finish')
 
-        # Draw obstacles as different shapes
+        # Draw obstacles as different shapes - now positioned along X-axis
         for i, obs in enumerate(self.environment.obstacles):
-            pos = obs['position']
+            # Convert obstacle position: z -> x (tunnel direction)
+            pos = np.array([obs['position'][2], obs['position'][0], obs['position'][1]])
             size = obs['size']
             obs_type = obs.get('type', 'sphere')
 
@@ -460,10 +477,10 @@ class FruitFlyRacer3D:
                 # Draw sphere
                 u = np.linspace(0, 2 * np.pi, 20)
                 v = np.linspace(0, np.pi, 20)
-                x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
-                y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
-                z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x, y, z, alpha=0.7, color='red')
+                x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+                y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+                z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.7, color='red')
 
             elif obs_type == 'box':
                 # Draw box
@@ -492,32 +509,35 @@ class FruitFlyRacer3D:
                                [edge[0][2], edge[1][2]], color='red', linewidth=2)
 
             elif obs_type == 'cylinder':
-                # Draw cylinder obstacle
+                # Draw cylinder obstacle (along X-axis)
                 theta_obs = np.linspace(0, 2*np.pi, 20)
-                z_obs = np.linspace(pos[2] - size/2, pos[2] + size/2, 10)
-                theta_grid_obs, z_grid_obs = np.meshgrid(theta_obs, z_obs)
-                x_grid_obs = pos[0] + size/2 * np.cos(theta_grid_obs)
-                y_grid_obs = pos[1] + size/2 * np.sin(theta_grid_obs)
-                self.ax.plot_surface(x_grid_obs, y_grid_obs, z_grid_obs, alpha=0.7, color='orange')
+                x_obs_cyl = np.linspace(pos[0] - size/2, pos[0] + size/2, 10)
+                theta_grid_obs, x_grid_obs_cyl = np.meshgrid(theta_obs, x_obs_cyl)
+                y_grid_obs = pos[1] + size/2 * np.cos(theta_grid_obs)
+                z_grid_obs = pos[2] + size/2 * np.sin(theta_grid_obs)
+                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=0.7, color='orange')
 
             else:
                 # Default to sphere for unknown types
                 u = np.linspace(0, 2 * np.pi, 20)
                 v = np.linspace(0, np.pi, 20)
-                x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
-                y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
-                z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x, y, z, alpha=0.7, color='purple')
+                x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+                y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+                z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.7, color='purple')
 
-        # Set axis limits
-        self.ax.set_xlim(-tunnel_radius*1.5, tunnel_radius*1.5)
+        # Set axis limits - horizontal tunnel
+        self.ax.set_xlim(-tunnel_length/2, tunnel_length/2)
         self.ax.set_ylim(-tunnel_radius*1.5, tunnel_radius*1.5)
-        self.ax.set_zlim(-tunnel_length/2, tunnel_length/2)
+        self.ax.set_zlim(-tunnel_radius*1.5, tunnel_radius*1.5)
 
-        self.ax.set_xlabel('X (m)')
-        self.ax.set_ylabel('Y (m)')
-        self.ax.set_zlabel('Z (m) - Tunnel Length')
-        self.ax.set_title('Fruit Fly Racer - 3D Tunnel View')
+        self.ax.set_xlabel('X (m) - Tunnel Length')
+        self.ax.set_ylabel('Y (m) - Vertical')
+        self.ax.set_zlabel('Z (m) - Horizontal')
+        self.ax.set_title('Fruit Fly Racer - Horizontal Tunnel View')
+
+        # Set initial view angle for horizontal tunnel
+        self.ax.view_init(elev=20, azim=0)  # Side view of horizontal tunnel
 
         self.canvas.draw()
 
@@ -532,49 +552,54 @@ class FruitFlyRacer3D:
                 collection.remove()
 
         # Get fly position and orientation
-        fly_pos = self.fly_model.get_position()
-        fly_vel = self.fly_model.get_velocity()
+        # Convert from z-direction to x-direction (tunnel is now horizontal)
+        fly_pos_z = self.fly_model.get_position()
+        fly_vel_z = self.fly_model.get_velocity()
+
+        # Convert coordinates: z -> x, x -> y, y -> z
+        fly_pos = np.array([fly_pos_z[2], fly_pos_z[0], fly_pos_z[1]])
+        fly_vel = np.array([fly_vel_z[2], fly_vel_z[0], fly_vel_z[1]])
 
         # Update camera to follow fly if not in spectator mode
         if not self.spectator_mode:
             # Center view on fly position
-            self.ax.set_xlim(fly_pos[0] - 10, fly_pos[0] + 10)
-            self.ax.set_ylim(fly_pos[1] - 10, fly_pos[1] + 10)
-            self.ax.set_zlim(fly_pos[2] - 10, fly_pos[2] + 10)
-
-            # Set view angle to follow fly
-            self.ax.view_init(elev=30, azim=45)
+            tunnel_length = self.environment.tunnel_length
+            tunnel_radius = self.environment.tunnel_radius
+            self.ax.set_xlim(-tunnel_length/2, tunnel_length/2)
+            self.ax.set_ylim(-tunnel_radius*1.5, tunnel_radius*1.5)
+            self.ax.set_zlim(-tunnel_radius*1.5, tunnel_radius*1.5)
+            self.ax.view_init(elev=20, azim=0)  # Side view of horizontal tunnel
 
         # Draw fly as an elongated shape (like a real fly)
         # Create a simple fly body representation
         fly_size = 0.3  # Size of fly representation
 
-        # Draw fly body (elongated ellipsoid)
+        # Draw fly body (elongated ellipsoid along X-axis - tunnel direction)
         u = np.linspace(0, 2 * np.pi, 20)
         v = np.linspace(0, np.pi, 20)
 
-        # Elongated along z-axis (direction of flight)
-        x = fly_pos[0] + fly_size * 0.5 * np.outer(np.cos(u), np.sin(v))
-        y = fly_pos[1] + fly_size * 0.5 * np.outer(np.sin(u), np.sin(v))
-        z = fly_pos[2] + fly_size * 2.0 * np.outer(np.ones(np.size(u)), np.cos(v))
+        # Elongated along X-axis (direction of flight through tunnel)
+        x = fly_pos[0] + fly_size * 2.0 * np.outer(np.ones(np.size(u)), np.cos(v))
+        y = fly_pos[1] + fly_size * 0.5 * np.outer(np.cos(u), np.sin(v))
+        z = fly_pos[2] + fly_size * 0.5 * np.outer(np.sin(u), np.sin(v))
 
         fly_surface = self.ax.plot_surface(x, y, z, alpha=0.8, color='darkgreen')
         fly_surface._is_fly = True
 
-        # Draw fly wings (two ellipses on sides)
+        # Draw fly wings (two ellipses on top/bottom)
         wing_size = fly_size * 0.8
-        for side in [-1, 1]:  # Left and right wings
+        for side in [-1, 1]:  # Top and bottom wings
             # Wing position offset
-            wing_x = fly_pos[0] + side * fly_size * 0.3
-            wing_y = fly_pos[1]
+            wing_x = fly_pos[0]
+            wing_y = fly_pos[1] + side * fly_size * 0.3
             wing_z = fly_pos[2]
 
             # Wing as flattened ellipsoid
             u_wing = np.linspace(0, 2 * np.pi, 15)
             v_wing = np.linspace(0, np.pi, 15)
-            x_wing = wing_x + wing_size * np.outer(np.cos(u_wing), np.sin(v_wing))
-            y_wing = wing_y + wing_size * 0.1 * np.outer(np.sin(u_wing), np.sin(v_wing))
-            z_wing = wing_z + wing_size * np.outer(np.ones(np.size(u_wing)), np.cos(v_wing))
+            x_wing = wing_x + wing_size * np.outer(np.ones(np.size(u_wing)), np.cos(v_wing))
+            y_wing = wing_y + wing_size * 0.1 * np.outer(np.cos(u_wing), np.sin(v_wing))
+            z_wing = wing_z + wing_size * np.outer(np.sin(u_wing), np.sin(v_wing))
 
             wing_surface = self.ax.plot_surface(x_wing, y_wing, z_wing, alpha=0.6, color='lightblue')
             wing_surface._is_fly = True
@@ -698,15 +723,26 @@ class FruitFlyRacer3D:
 
     def toggle_spectator_mode(self):
         """Toggle spectator mode"""
+        old_mode = self.spectator_mode
         self.spectator_mode = self.spectator_var.get()
-        if self.spectator_mode:
-            self.log("Spectator mode enabled - you can rotate and zoom the 3D view")
+
+        if self.spectator_mode and not old_mode:
+            self.log("=== SPECTATOR MODE ENABLED ===")
+            self.log("You can now:")
+            self.log("  - Rotate view: Click and drag mouse")
+            self.log("  - Zoom: Use mouse wheel")
+            self.log("  - Fly continues flying normally")
+            self.log("=============================")
             # Enable interactive rotation
             self.ax.mouse_init()
-        else:
-            self.log("Spectator mode disabled - camera follows fly")
-            # Reset to default view
+            # Set a good viewing angle for spectator
             self.ax.view_init(elev=30, azim=45)
+        elif not self.spectator_mode and old_mode:
+            self.log("=== SPECTATOR MODE DISABLED ===")
+            self.log("Camera will now follow the fly")
+            self.log("=============================")
+            # Reset to default view
+            self.ax.view_init(elev=20, azim=0)
 
     def on_mouse_move(self, event):
         """Handle mouse movement for camera control"""
