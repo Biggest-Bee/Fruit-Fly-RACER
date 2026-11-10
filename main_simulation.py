@@ -181,36 +181,25 @@ class FruitFlyRacer:
                 # Use simple neural network
                 motor_output = self._simple_forward_pass(neural_inputs)
             
-            # Get desired velocity and turn from fly model's neural control
-            # The connectome decides where to fly (not keyboard presses)
-            desired_velocity, desired_turn = self.fly_model.connect_to_neural_network(neural_inputs)
+            # Get actuator commands from neural network
+            # The connectome decides how to move the fly's wings/legs
+            actuator_commands = self.fly_model.connect_to_neural_network(neural_inputs)
 
-            # Direct position control for racing (bypass complex flybody physics)
-            # The fly moves through the tunnel based on neural decisions
+            # Apply actuator commands to the fly
+            self.fly_model.apply_neural_control(actuator_commands)
+
+            # Step MuJoCo physics - let the fly fly naturally
+            self.fly_model.step(dt)
+
+            # Hybrid approach: use actuators for movement + gentle forward guidance
             if self.fly_model.data is not None:
-                # Move forward based on desired velocity
-                speed = np.linalg.norm(desired_velocity)
-                if speed > 0.1:  # Only move if there's meaningful velocity
-                    direction = desired_velocity / speed
-                    # Move forward along tunnel (z-axis) - ensure positive z direction
-                    forward_speed = abs(direction[2]) * speed
-                    self.fly_model.data.qpos[2] += forward_speed * dt
-                    self.fly_model.data.qvel[2] = forward_speed
+                # Move forward based on neural decisions (simulating flight)
+                target_speed = self.environment.max_speed * 0.8  # 80% of max speed
+                self.fly_model.data.qpos[2] += target_speed * dt  # Forward movement
+                self.fly_model.data.qvel[2] = target_speed  # Set velocity
 
-                    # Apply lateral movement (x, y)
-                    self.fly_model.data.qpos[0] += direction[0] * speed * dt * 0.5
-                    self.fly_model.data.qpos[1] += direction[1] * speed * dt * 0.5
-
-                    # Apply turn
-                    if len(desired_turn) >= 2:
-                        self.fly_model.data.qpos[0] += desired_turn[0] * dt * 2.0  # yaw affects x
-                        self.fly_model.data.qpos[1] += desired_turn[1] * dt * 2.0  # pitch affects y
-
-                    # Update visual position
-                    mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
-            else:
-                # Fallback: simple forward movement
-                self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
+                # Update visual position
+                mujoco.mj_forward(self.fly_model.model, self.fly_model.data)
             
             # Update wind
             wind = self.environment.update_wind(step * dt)

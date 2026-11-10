@@ -92,60 +92,50 @@ class MuJoCoFlyModel:
             print(f"Error loading connectome: {e}")
             return False
     
-    def connect_to_neural_network(self, neural_inputs: np.ndarray) -> tuple:
+    def connect_to_neural_network(self, neural_inputs: np.ndarray) -> np.ndarray:
         """
         Connect sensory inputs to neural network (connectome-based)
-        
+        Returns actuator commands for the fly's wings/legs
+
         Args:
             neural_inputs: Sensory input vector
-            
+
         Returns:
-            Tuple of (desired_velocity, desired_turn)
+            Actuator command vector (78 actuators)
         """
         if self.connectome_weights is not None:
-            # Use connectome weights for neural processing
-            # Simplified: multiply inputs by connectome weights
-            # In production, this would use actual spiking simulation
             try:
                 # Resize inputs to match connectome dimensions
                 input_size = neural_inputs.shape[0]
                 if input_size < self.connectome_weights.shape[0]:
-                    # Pad inputs
                     padded_inputs = np.zeros(self.connectome_weights.shape[0])
                     padded_inputs[:input_size] = neural_inputs
                     neural_inputs = padded_inputs
-                
-                # Process through connectome
-                # Connectome has limited output dimensions, so use available columns
-                num_outputs = min(5, self.connectome_weights.shape[1])
+
+                # Process through connectome to get motor output
+                num_outputs = min(self.model.nu, self.connectome_weights.shape[1])
                 motor_output = np.dot(neural_inputs, self.connectome_weights[:len(neural_inputs), :num_outputs])
 
-                # Extract velocity and turn commands
-                if num_outputs >= 3:
-                    # Normalize motor output to reasonable range before scaling
-                    motor_output = np.tanh(motor_output)  # Normalize to [-1, 1]
-                    desired_velocity = motor_output[:3] * self.max_speed
-                    # Ensure forward motion (positive z direction along tunnel)
-                    if desired_velocity[2] < 0:
-                        desired_velocity[2] = abs(desired_velocity[2])  # Flip to forward
-                else:
-                    desired_velocity = np.zeros(3)
-                    desired_velocity[2] = 0.5 * self.max_speed  # Default forward
+                # Normalize to [-1, 1] range for actuator commands
+                motor_output = np.tanh(motor_output)
 
-                if num_outputs >= 5:
-                    desired_turn = np.tanh(motor_output[3:5]) * 1.0  # Normalize to [-1, 1]
-                elif num_outputs >= 4:
-                    desired_turn = np.array([np.tanh(motor_output[3]), 0.0])  # Only yaw available
-                else:
-                    desired_turn = np.array([0.0, 0.0])  # No turn control available
+                # Pad to full actuator count if needed
+                if len(motor_output) < self.model.nu:
+                    full_output = np.zeros(self.model.nu)
+                    full_output[:len(motor_output)] = motor_output
+                    motor_output = full_output
 
-                return desired_velocity, desired_turn
+                return motor_output
             except Exception as e:
                 print(f"Error processing through connectome: {e}")
-                return np.array([0.0, 0.0, 0.5]), np.array([0.0, 0.0])
+                return np.zeros(self.model.nu)
         else:
-            # Fallback: move forward slowly
-            return np.array([0.0, 0.0, 0.5]), np.array([0.0, 0.0])
+            # Fallback: gentle wing flapping for forward flight
+            actuator_commands = np.zeros(self.model.nu)
+            # Assume first few actuators are wing actuators
+            for i in range(min(10, self.model.nu)):
+                actuator_commands[i] = 0.5 * np.sin(i * 0.5)  # Gentle oscillation
+            return actuator_commands
     
     def apply_acceleration(self, desired_velocity: np.ndarray, dt: float):
         """
