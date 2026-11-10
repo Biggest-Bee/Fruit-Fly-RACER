@@ -12,6 +12,12 @@ import mujoco
 import os
 import sys
 from typing import Optional
+from PIL import Image, ImageTk
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from mpl_toolkits.mplot3d import Axes3D
 
 # Import our modules
 from environment import RacingEnvironment
@@ -153,16 +159,24 @@ class FruitFlyRacer3D:
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # 3D View - embedded MuJoCo renderer
-        view_frame = ttk.LabelFrame(right_frame, text="3D View (MuJoCo)", padding=10)
+        # 3D View - matplotlib 3D plot
+        view_frame = ttk.LabelFrame(right_frame, text="3D View", padding=10)
         view_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Create canvas for 3D rendering
-        self.canvas = tk.Canvas(view_frame, bg="black", width=800, height=600)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        # Create matplotlib figure and canvas
+        self.fig = Figure(figsize=(8, 6), dpi=100)
+        self.ax = self.fig.add_subplot(111, projection='3d')
+        self.canvas = FigureCanvasTkAgg(self.fig, master=view_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Store current image for display
-        self.current_image = None
+        # Initialize plot
+        self.ax.set_xlabel('X')
+        self.ax.set_ylabel('Y')
+        self.ax.set_zlabel('Z')
+        self.ax.set_title('Fruit Fly Racer - 3D View')
+
+        # Draw tunnel
+        self.draw_tunnel()
 
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
@@ -215,14 +229,6 @@ class FruitFlyRacer3D:
         self.stop_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Stopped", foreground="orange")
         self.log("Simulation stopped by user")
-
-        # Close renderer if it exists
-        if self.renderer is not None:
-            try:
-                self.renderer.close()
-            except:
-                pass
-            self.renderer = None
     
     def run_simulation(self):
         """Run the simulation loop"""
@@ -378,22 +384,16 @@ class FruitFlyRacer3D:
         pass
     
     def start_mujoco_viewer(self):
-        """Start MuJoCo renderer embedded in Tkinter"""
+        """Start 3D visualization using matplotlib"""
         if self.fly_model.model is None or self.fly_model.data is None:
             self.log("Error: Fly model not loaded")
             return
 
         try:
-            # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
-            from mujoco.rendering.classic.renderer import Renderer
-            from PIL import Image, ImageTk
-
-            # Create renderer in main thread (not background thread)
-            self.renderer = Renderer(self.fly_model.model, height=600, width=800)
             self.viewer_running = True
             self.frame_count = 0
 
-            self.log("MuJoCo renderer started")
+            self.log("3D visualization started (matplotlib)")
 
             # Start render loop using root.after (main thread)
             self.render_frame()
@@ -403,46 +403,85 @@ class FruitFlyRacer3D:
             import traceback
             traceback.print_exc()
 
+    def draw_tunnel(self):
+        """Draw the tunnel in 3D"""
+        # Clear previous tunnel
+        for line in self.ax.lines[:]:
+            line.remove()
+        for collection in self.ax.collections[:]:
+            collection.remove()
+
+        # Draw tunnel walls (simplified as cylinders)
+        tunnel_length = self.environment.tunnel_length
+        tunnel_radius = self.environment.tunnel_radius
+
+        # Draw tunnel walls as wireframe
+        theta = np.linspace(0, 2*np.pi, 50)
+        z = np.linspace(-tunnel_length/2, tunnel_length/2, 20)
+
+        # Create grid for tunnel walls
+        for i in range(4):  # 4 walls
+            angle_offset = i * np.pi / 2
+            x_wall = tunnel_radius * np.cos(theta + angle_offset)
+            y_wall = tunnel_radius * np.sin(theta + angle_offset)
+
+            for j in range(len(z)-1):
+                # Draw wall segments
+                self.ax.plot([x_wall[0], x_wall[-1]], [y_wall[0], y_wall[-1]],
+                           [z[j], z[j+1]], 'b-', alpha=0.3, linewidth=1)
+
+        # Draw obstacles
+        for obs in self.environment.obstacles:
+            pos = obs['position']
+            size = obs['size']
+
+            # Draw obstacle as sphere
+            u = np.linspace(0, 2 * np.pi, 20)
+            v = np.linspace(0, np.pi, 20)
+            x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+            y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+            z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+
+            self.ax.plot_surface(x, y, z, alpha=0.6, color='red')
+
+        # Draw start and finish lines
+        self.ax.plot([-tunnel_radius, tunnel_radius], [-tunnel_radius, -tunnel_radius],
+                    [-tunnel_length/2, -tunnel_length/2], 'g-', linewidth=3)
+        self.ax.plot([-tunnel_radius, tunnel_radius], [tunnel_radius, tunnel_radius],
+                    [tunnel_length/2, tunnel_length/2], 'g-', linewidth=3)
+
+        self.canvas.draw()
+
+    def update_3d_view(self):
+        """Update the 3D view with current fly position"""
+        # Clear previous fly marker
+        for line in self.ax.lines[:]:
+            if hasattr(line, '_is_fly'):
+                line.remove()
+
+        # Get fly position
+        fly_pos = self.fly_model.get_position()
+
+        # Draw fly as a point
+        fly_line, = self.ax.plot([fly_pos[0]], [fly_pos[1]], [fly_pos[2]],
+                                'ro', markersize=10, label='Fly')
+        fly_line._is_fly = True
+
+        # Update title with position
+        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f})')
+
+        self.canvas.draw()
+
     def render_frame(self):
-        """Render a single frame and schedule next frame"""
+        """Update the 3D view (matplotlib version)"""
         if not self.viewer_running or not self.simulation_running:
             return
 
         try:
-            if self.renderer is None:
-                return
+            # Update fly position in 3D view
+            self.update_3d_view()
 
-            # Update scene with camera
-            cam_name = 'hero' if not self.spectator_mode else 'track1'
-
-            try:
-                self.renderer.update_scene(self.fly_model.data, camera=cam_name)
-            except Exception as cam_error:
-                self.log(f"Camera '{cam_name}' failed: {cam_error}, using default")
-                self.renderer.update_scene(self.fly_model.data)
-
-            # Render frame
-            frame = self.renderer.render()
-            self.frame_count += 1
-
-            # Debug: Log frame info every 30 frames
-            if self.frame_count % 30 == 0:
-                self.log(f"Frame {self.frame_count}: shape={frame.shape}, min={frame.min()}, max={frame.max()}, mean={frame.mean():.2f}")
-                self.log(f"Camera: {cam_name}")
-                self.log(f"Fly position: {self.fly_model.get_position()}")
-
-            # Check if frame is all black
-            if frame.max() == 0:
-                self.log(f"WARNING: Frame {self.frame_count} is completely black!")
-
-            # Convert to PIL Image and display in Tkinter
-            img = Image.fromarray(frame)
-            img_tk = ImageTk.PhotoImage(img)
-
-            # Update canvas
-            self.update_canvas(img_tk)
-
-            # Schedule next frame (~30 FPS)
+            # Schedule next update (~30 FPS)
             self.root.after(33, self.render_frame)
 
         except Exception as e:
@@ -563,14 +602,6 @@ class FruitFlyRacer3D:
         """Handle window close"""
         self.simulation_running = False
         self.viewer_running = False
-
-        # Close renderer if it exists
-        if self.renderer is not None:
-            try:
-                self.renderer.close()
-            except:
-                pass
-
         self.root.destroy()
 
 
