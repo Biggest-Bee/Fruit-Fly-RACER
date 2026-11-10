@@ -175,6 +175,14 @@ class FruitFlyRacer3D:
         self.ax.set_zlabel('Z')
         self.ax.set_title('Fruit Fly Racer - 3D View')
 
+        # Enable zoom with mouse wheel
+        self.canvas.mpl_connect('scroll_event', self.on_scroll)
+
+        # Enable rotation with mouse drag
+        self.canvas.mpl_connect('button_press_event', self.on_mouse_press)
+        self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
+        self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
+
         # Draw tunnel
         self.draw_tunnel()
 
@@ -527,6 +535,16 @@ class FruitFlyRacer3D:
         fly_pos = self.fly_model.get_position()
         fly_vel = self.fly_model.get_velocity()
 
+        # Update camera to follow fly if not in spectator mode
+        if not self.spectator_mode:
+            # Center view on fly position
+            self.ax.set_xlim(fly_pos[0] - 10, fly_pos[0] + 10)
+            self.ax.set_ylim(fly_pos[1] - 10, fly_pos[1] + 10)
+            self.ax.set_zlim(fly_pos[2] - 10, fly_pos[2] + 10)
+
+            # Set view angle to follow fly
+            self.ax.view_init(elev=30, azim=45)
+
         # Draw fly as an elongated shape (like a real fly)
         # Create a simple fly body representation
         fly_size = 0.3  # Size of fly representation
@@ -613,19 +631,82 @@ class FruitFlyRacer3D:
         except Exception as e:
             self.log(f"Canvas update error: {e}")
     
+    def on_scroll(self, event):
+        """Handle mouse scroll for zoom"""
+        if event.inaxes != self.ax:
+            return
+
+        # Zoom in/out by changing axis limits
+        scale = 1.1 if event.step > 0 else 0.9
+
+        # Get current limits
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
+        zlim = self.ax.get_zlim()
+
+        # Calculate new limits (zoom towards center)
+        x_center = (xlim[0] + xlim[1]) / 2
+        y_center = (ylim[0] + ylim[1]) / 2
+        z_center = (zlim[0] + zlim[1]) / 2
+
+        x_range = (xlim[1] - xlim[0]) * scale
+        y_range = (ylim[1] - ylim[0]) * scale
+        z_range = (zlim[1] - zlim[0]) * scale
+
+        # Set new limits
+        self.ax.set_xlim(x_center - x_range/2, x_center + x_range/2)
+        self.ax.set_ylim(y_center - y_range/2, y_center + y_range/2)
+        self.ax.set_zlim(z_center - z_range/2, z_center + z_range/2)
+
+        self.canvas.draw()
+
+    def on_mouse_press(self, event):
+        """Handle mouse press for rotation"""
+        if event.inaxes == self.ax:
+            self._dragging = True
+            self._last_x = event.x
+            self._last_y = event.y
+
+    def on_mouse_move(self, event):
+        """Handle mouse move for rotation"""
+        if not hasattr(self, '_dragging') or not self._dragging:
+            return
+        if event.inaxes != self.ax:
+            return
+
+        # Rotate the 3D view
+        dx = event.x - self._last_x
+        dy = event.y - self._last_y
+
+        # Get current view angles
+        elev = self.ax.elev
+        azim = self.ax.azim
+
+        # Update angles (clamp elevation to avoid flipping)
+        new_elev = np.clip(elev + dy * 0.5, -90, 90)
+        new_azim = azim - dx * 0.5
+
+        self.ax.view_init(elev=new_elev, azim=new_azim)
+
+        self._last_x = event.x
+        self._last_y = event.y
+        self.canvas.draw()
+
+    def on_mouse_release(self, event):
+        """Handle mouse release"""
+        self._dragging = False
+
     def toggle_spectator_mode(self):
         """Toggle spectator mode"""
         self.spectator_mode = self.spectator_var.get()
         if self.spectator_mode:
-            self.log("Spectator mode enabled - you can move camera freely")
-            # Bind mouse and keyboard events
-            self.canvas.bind("<Motion>", self.on_mouse_move)
-            self.canvas.bind("<ButtonPress-1>", self.on_mouse_click)
-            self.canvas.focus_set()
+            self.log("Spectator mode enabled - you can rotate and zoom the 3D view")
+            # Enable interactive rotation
+            self.ax.mouse_init()
         else:
             self.log("Spectator mode disabled - camera follows fly")
-            self.canvas.unbind("<Motion>")
-            self.canvas.unbind("<ButtonPress-1>")
+            # Reset to default view
+            self.ax.view_init(elev=30, azim=45)
 
     def on_mouse_move(self, event):
         """Handle mouse movement for camera control"""
