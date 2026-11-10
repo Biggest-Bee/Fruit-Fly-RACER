@@ -469,7 +469,7 @@ class FruitFlyRacer3D:
         for poly in self.ax.collections[:]:
             poly.remove()
 
-        # Draw tunnel as horizontal cylinder along X-axis
+        # Draw tunnel as enclosed cylinder along X-axis
         tunnel_length = self.environment.tunnel_length
         tunnel_radius = self.environment.tunnel_radius
 
@@ -482,20 +482,28 @@ class FruitFlyRacer3D:
         y_grid = tunnel_radius * np.cos(theta_grid)
         z_grid = tunnel_radius * np.sin(theta_grid)
 
-        # Draw cylinder walls (opaque)
+        # Draw cylinder walls (opaque - enclosed)
         self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=1.0, color='blue', edgecolor='none')
 
-        # Draw tunnel end caps (start and finish)
+        # Draw tunnel end caps (start and finish) - enclosed
         # Start cap (X = -tunnel_length/2)
         theta_cap = np.linspace(0, 2*np.pi, 50)
         y_cap = tunnel_radius * np.cos(theta_cap)
         z_cap = tunnel_radius * np.sin(theta_cap)
         x_cap = np.full_like(theta_cap, -tunnel_length/2)
-        self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=2, label='Start')
+        self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=3, label='Start')
 
         # Finish cap (X = +tunnel_length/2)
         x_cap_finish = np.full_like(theta_cap, tunnel_length/2)
-        self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=2, label='Finish')
+        self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=3, label='Finish')
+
+        # Draw end caps as filled circles (enclosed tunnel)
+        # Start cap
+        self.ax.plot_surface(x_cap.reshape(1, -1), y_cap.reshape(1, -1), z_cap.reshape(1, -1),
+                           alpha=1.0, color='darkblue')
+        # Finish cap
+        self.ax.plot_surface(x_cap_finish.reshape(1, -1), y_cap.reshape(1, -1), z_cap.reshape(1, -1),
+                           alpha=1.0, color='darkblue')
 
         # Draw obstacles as different shapes - convert from z-direction to x-direction
         obstacle_count = 0
@@ -557,6 +565,74 @@ class FruitFlyRacer3D:
                 z_grid_obs = pos[2] + size/2 * np.sin(theta_grid_obs)
                 self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='orange')
 
+            elif obs_type == 'cube':
+                # Draw cube obstacle (3D)
+                x_min, x_max = pos[0] - size/2, pos[0] + size/2
+                y_min, y_max = pos[1] - size/2, pos[1] + size/2
+                z_min, z_max = pos[2] - size/2, pos[2] + size/2
+
+                # Draw cube faces
+                # Front face
+                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
+                                   [[y_min, y_min], [y_max, y_max]],
+                                   [[z_min, z_min], [z_min, z_min]],
+                                   alpha=1.0, color='cyan')
+                # Back face
+                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
+                                   [[y_min, y_min], [y_max, y_max]],
+                                   [[z_max, z_max], [z_max, z_max]],
+                                   alpha=1.0, color='cyan')
+                # Top face
+                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
+                                   [[y_max, y_max], [y_max, y_max]],
+                                   [[z_min, z_max], [z_min, z_max]],
+                                   alpha=1.0, color='cyan')
+                # Bottom face
+                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
+                                   [[y_min, y_min], [y_min, y_min]],
+                                   [[z_min, z_max], [z_min, z_max]],
+                                   alpha=1.0, color='cyan')
+                # Left face
+                self.ax.plot_surface([[x_min, x_min], [x_min, x_min]],
+                                   [[y_min, y_max], [y_min, y_max]],
+                                   [[z_min, z_max], [z_min, z_max]],
+                                   alpha=1.0, color='cyan')
+                # Right face
+                self.ax.plot_surface([[x_max, x_max], [x_max, x_max]],
+                                   [[y_min, y_max], [y_min, y_max]],
+                                   [[z_min, z_max], [z_min, z_max]],
+                                   alpha=1.0, color='cyan')
+
+            elif obs_type == 'pyramid':
+                # Draw pyramid obstacle (3D)
+                # Base square
+                base_size = size
+                apex_height = size * 1.5
+
+                # Base corners
+                x1, x2 = pos[0] - base_size/2, pos[0] + base_size/2
+                y1, y2 = pos[1] - base_size/2, pos[1] + base_size/2
+                z_base = pos[2] - size/2
+                z_apex = pos[2] + apex_height
+
+                # Draw pyramid faces
+                # Front triangular face
+                self.ax.plot_surface([[x1, x2], [x1, x2]],
+                                   [[y1, y1], [y2, y2]],
+                                   [[z_base, z_base], [z_base, z_base]],
+                                   alpha=1.0, color='magenta')
+                # This is simplified - in production we'd draw proper pyramid faces
+
+            elif obs_type == 'tetrahedron':
+                # Draw tetrahedron obstacle (3D)
+                # Simplified as small sphere for now
+                u = np.linspace(0, 2 * np.pi, 20)
+                v = np.linspace(0, np.pi, 20)
+                x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+                y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+                z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='yellow')
+
             else:
                 # Default to sphere for unknown types
                 u = np.linspace(0, 2 * np.pi, 20)
@@ -607,13 +683,25 @@ class FruitFlyRacer3D:
 
         # Update camera to follow fly if not in spectator mode
         if not self.spectator_mode:
-            # Center view on fly position
+            # Center view on fly position - start inside tunnel
             tunnel_length = self.environment.tunnel_length
             tunnel_radius = self.environment.tunnel_radius
-            self.ax.set_xlim(-tunnel_length/2, tunnel_length/2)
-            self.ax.set_ylim(-tunnel_radius*1.5, tunnel_radius*1.5)
-            self.ax.set_zlim(-tunnel_radius*1.5, tunnel_radius*1.5)
-            self.ax.view_init(elev=20, azim=0)  # Side view of horizontal tunnel
+
+            # Start camera inside tunnel at beginning
+            if not hasattr(self, '_camera_initialized'):
+                self._camera_initialized = True
+                # Start at beginning of tunnel, inside
+                start_x = -tunnel_length/2 + 5  # 5m from start
+                self.ax.set_xlim(start_x - 20, start_x + 20)  # Show 40m ahead
+                self.ax.set_ylim(-tunnel_radius, tunnel_radius)
+                self.ax.set_zlim(-tunnel_radius, tunnel_radius)
+                self.ax.view_init(elev=10, azim=0)  # Slight downward angle, looking forward
+            else:
+                # Follow fly position
+                self.ax.set_xlim(fly_pos[0] - 20, fly_pos[0] + 20)
+                self.ax.set_ylim(-tunnel_radius, tunnel_radius)
+                self.ax.set_zlim(-tunnel_radius, tunnel_radius)
+                self.ax.view_init(elev=10, azim=0)
 
         # Draw fly as an elongated shape (like a real fly)
         # Create a simple fly body representation
@@ -702,9 +790,13 @@ class FruitFlyRacer3D:
             self.log(f"Canvas update error: {e}")
     
     def on_scroll(self, event):
-        """Handle mouse scroll for zoom"""
+        """Handle mouse scroll for zoom - limited to stay inside tunnel"""
         if event.inaxes != self.ax:
             return
+
+        # Get tunnel bounds
+        tunnel_length = self.environment.tunnel_length
+        tunnel_radius = self.environment.tunnel_radius
 
         # Zoom in/out by changing axis limits
         scale = 1.1 if event.step > 0 else 0.9
@@ -722,6 +814,21 @@ class FruitFlyRacer3D:
         x_range = (xlim[1] - xlim[0]) * scale
         y_range = (ylim[1] - ylim[0]) * scale
         z_range = (zlim[1] - zlim[0]) * scale
+
+        # Limit zoom to stay within tunnel bounds
+        max_x_range = tunnel_length * 0.8  # Can't zoom out beyond tunnel length
+        max_y_range = tunnel_radius * 2.5  # Can't zoom out beyond tunnel radius
+        max_z_range = tunnel_radius * 2.5
+
+        x_range = min(x_range, max_x_range)
+        y_range = min(y_range, max_y_range)
+        z_range = min(z_range, max_z_range)
+
+        # Also limit minimum zoom (can't zoom in too much)
+        min_range = tunnel_radius * 0.5
+        x_range = max(x_range, min_range)
+        y_range = max(y_range, min_range)
+        z_range = max(z_range, min_range)
 
         # Set new limits
         self.ax.set_xlim(x_center - x_range/2, x_center + x_range/2)

@@ -37,7 +37,8 @@ class RacingEnvironment:
         
         # Obstacles
         self.obstacles = []
-        self.obstacle_types = ['sphere', 'box', 'cylinder']
+        # Obstacle types - all 3D shapes
+        self.obstacle_types = ['sphere', 'box', 'cylinder', 'cube', 'pyramid', 'tetrahedron']
         
         # Physics limits
         self.current_speed = 0.0
@@ -146,14 +147,15 @@ class RacingEnvironment:
                     # Random obstacle type
                     obs_type = random.choice(self.obstacle_types)
 
-                    # Random position within tunnel
+                    # Random position within tunnel - ensure inside cylinder
                     angle = random.uniform(0, 2 * math.pi)
-                    radius = random.uniform(0, self.tunnel_radius * 0.8)
+                    # Keep obstacles well inside tunnel radius (80% of radius)
+                    radius = random.uniform(0, self.tunnel_radius * 0.7)
                     x = radius * math.cos(angle)
                     y = radius * math.sin(angle)
 
-                    # Random size
-                    size = random.uniform(0.5, 2.0)
+                    # Random size - keep small enough to fit inside
+                    size = random.uniform(0.5, min(2.0, self.tunnel_radius * 0.3))
 
                     # Generate obstacle
                     obstacle = {
