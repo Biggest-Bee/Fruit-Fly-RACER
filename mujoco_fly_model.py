@@ -286,12 +286,13 @@ class MuJoCoFlyModel:
         # Since flybody is a walking model, we add forward thrust
         if desired_velocity is not None:
             # Apply forward force in x direction (through horizontal tunnel)
+            # For free joint, forces are applied to first 6 DOF (3 translation + 3 rotation)
             forward_force = desired_velocity[0] * 10.0  # Scale force
-            self.data.qfrc_applied[0] += forward_force
+            self.data.qfrc_applied[0] += forward_force  # X translation
 
             # Add some lift to keep fly airborne (y direction is up in tunnel)
             lift_force = 5.0  # Constant upward force
-            self.data.qfrc_applied[1] += lift_force
+            self.data.qfrc_applied[1] += lift_force  # Y translation (up)
 
         # Step MuJoCo physics
         mujoco.mj_step(self.model, self.data)

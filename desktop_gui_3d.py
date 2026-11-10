@@ -192,8 +192,8 @@ class FruitFlyRacer3D:
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # Draw tunnel (after log_text is created)
-        self.draw_tunnel()
+        # Don't draw tunnel yet - wait for obstacles to be generated
+        self.log("3D view initialized - obstacles will appear when simulation starts")
 
         # Log the initialization
         self.log("Fruit Fly Racer 3D initialized")
@@ -393,10 +393,10 @@ class FruitFlyRacer3D:
                 # Step MuJoCo physics with flight force
                 self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
 
-                # Get updated position from physics
+                # Get updated position from physics (use body position/velocity)
                 if self.fly_model.data is not None:
-                    position = self.fly_model.data.qpos[:3]
-                    velocity = self.fly_model.data.qvel[:3]
+                    position = self.fly_model.get_position()
+                    velocity = self.fly_model.get_velocity()
                 
                 # Check collision
                 if self.environment.check_collision(position):
@@ -434,10 +434,10 @@ class FruitFlyRacer3D:
         pass
     
     def update_mujoco_scene(self):
-        """Update MuJoCo scene with new obstacles"""
-        # Update obstacle positions in MuJoCo scene
-        # This would modify the MuJoCo model to reflect new obstacles
-        pass
+        """Update 3D scene with new obstacles"""
+        # Redraw tunnel and obstacles
+        self.draw_tunnel()
+        self.log(f"Updated 3D scene with {len(self.environment.obstacles)} obstacles")
     
     def start_mujoco_viewer(self):
         """Start 3D visualization using matplotlib"""
