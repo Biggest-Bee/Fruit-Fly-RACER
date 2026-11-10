@@ -301,18 +301,18 @@ class MuJoCoFlyModel:
 
         # Limit velocity to prevent teleporting
         max_speed = 5.0  # m/s
-        # Use body velocity for limiting (xvelp is linear velocity)
+        # Use subtree_linvel for limiting (correct attribute in MuJoCo 3.16.0)
         if self.model.nbody > 1:
-            current_speed = np.linalg.norm(self.data.xvelp[1])
+            current_speed = np.linalg.norm(self.data.subtree_linvel[1])
             if current_speed > max_speed:
                 # Scale down velocity to max speed
                 scale = max_speed / current_speed
-                self.data.xvelp[1] *= scale
+                self.data.subtree_linvel[1] *= scale
         else:
-            current_speed = np.linalg.norm(self.data.xvelp[0])
+            current_speed = np.linalg.norm(self.data.subtree_linvel[0])
             if current_speed > max_speed:
                 scale = max_speed / current_speed
-                self.data.xvelp[0] *= scale
+                self.data.subtree_linvel[0] *= scale
 
         # Smooth position updates (prevent teleporting)
         # Only allow small position changes per step
@@ -363,10 +363,10 @@ class MuJoCoFlyModel:
         """Get current fly velocity"""
         if self.data is None:
             return np.array([0.0, 0.0, 0.0])
-        # Use body velocity (xvelp) for linear velocity
+        # Use subtree_linvel for linear velocity (correct attribute in MuJoCo 3.16.0)
         if self.model.nbody > 1:
-            return self.data.xvelp[1]  # Thorax linear velocity
-        return self.data.xvelp[0]  # Fallback
+            return self.data.subtree_linvel[1]  # Thorax linear velocity
+        return self.data.subtree_linvel[0]  # Fallback
     
     def apply_neural_control(self, motor_commands: np.ndarray):
         """
