@@ -410,45 +410,106 @@ class FruitFlyRacer3D:
             line.remove()
         for collection in self.ax.collections[:]:
             collection.remove()
+        for poly in self.ax.collections[:]:
+            poly.remove()
 
-        # Draw tunnel walls (simplified as cylinders)
+        # Draw tunnel as cylinder
         tunnel_length = self.environment.tunnel_length
         tunnel_radius = self.environment.tunnel_radius
 
-        # Draw tunnel walls as wireframe
-        theta = np.linspace(0, 2*np.pi, 50)
-        z = np.linspace(-tunnel_length/2, tunnel_length/2, 20)
+        # Create cylinder surface
+        theta = np.linspace(0, 2*np.pi, 100)
+        z = np.linspace(-tunnel_length/2, tunnel_length/2, 50)
 
-        # Create grid for tunnel walls
-        for i in range(4):  # 4 walls
-            angle_offset = i * np.pi / 2
-            x_wall = tunnel_radius * np.cos(theta + angle_offset)
-            y_wall = tunnel_radius * np.sin(theta + angle_offset)
+        # Create meshgrid for cylinder
+        theta_grid, z_grid = np.meshgrid(theta, z)
+        x_grid = tunnel_radius * np.cos(theta_grid)
+        y_grid = tunnel_radius * np.sin(theta_grid)
 
-            for j in range(len(z)-1):
-                # Draw wall segments
-                self.ax.plot([x_wall[0], x_wall[-1]], [y_wall[0], y_wall[-1]],
-                           [z[j], z[j+1]], 'b-', alpha=0.3, linewidth=1)
+        # Draw cylinder walls (semi-transparent)
+        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.3, color='blue', edgecolor='none')
 
-        # Draw obstacles
-        for obs in self.environment.obstacles:
+        # Draw tunnel end caps (start and finish)
+        # Start cap
+        theta_cap = np.linspace(0, 2*np.pi, 50)
+        x_cap = tunnel_radius * np.cos(theta_cap)
+        y_cap = tunnel_radius * np.sin(theta_cap)
+        z_cap = np.full_like(theta_cap, -tunnel_length/2)
+        self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=2, label='Start')
+
+        # Finish cap
+        z_cap_finish = np.full_like(theta_cap, tunnel_length/2)
+        self.ax.plot(x_cap, y_cap, z_cap_finish, color='green', linewidth=2, label='Finish')
+
+        # Draw obstacles as different shapes
+        for i, obs in enumerate(self.environment.obstacles):
             pos = obs['position']
             size = obs['size']
+            obs_type = obs.get('type', 'sphere')
 
-            # Draw obstacle as sphere
-            u = np.linspace(0, 2 * np.pi, 20)
-            v = np.linspace(0, np.pi, 20)
-            x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
-            y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
-            z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+            # Draw obstacle based on type
+            if obs_type == 'sphere':
+                # Draw sphere
+                u = np.linspace(0, 2 * np.pi, 20)
+                v = np.linspace(0, np.pi, 20)
+                x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+                y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+                z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+                self.ax.plot_surface(x, y, z, alpha=0.7, color='red')
 
-            self.ax.plot_surface(x, y, z, alpha=0.6, color='red')
+            elif obs_type == 'box':
+                # Draw box
+                x_min, x_max = pos[0] - size/2, pos[0] + size/2
+                y_min, y_max = pos[1] - size/2, pos[1] + size/2
+                z_min, z_max = pos[2] - size/2, pos[2] + size/2
 
-        # Draw start and finish lines
-        self.ax.plot([-tunnel_radius, tunnel_radius], [-tunnel_radius, -tunnel_radius],
-                    [-tunnel_length/2, -tunnel_length/2], 'g-', linewidth=3)
-        self.ax.plot([-tunnel_radius, tunnel_radius], [tunnel_radius, tunnel_radius],
-                    [tunnel_length/2, tunnel_length/2], 'g-', linewidth=3)
+                # Draw box edges
+                edges = [
+                    [(x_min, y_min, z_min), (x_max, y_min, z_min)],
+                    [(x_max, y_min, z_min), (x_max, y_max, z_min)],
+                    [(x_max, y_max, z_min), (x_min, y_max, z_min)],
+                    [(x_min, y_max, z_min), (x_min, y_min, z_min)],
+                    [(x_min, y_min, z_max), (x_max, y_min, z_max)],
+                    [(x_max, y_min, z_max), (x_max, y_max, z_max)],
+                    [(x_max, y_max, z_max), (x_min, y_max, z_max)],
+                    [(x_min, y_max, z_max), (x_min, y_min, z_max)],
+                    [(x_min, y_min, z_min), (x_min, y_min, z_max)],
+                    [(x_max, y_min, z_min), (x_max, y_min, z_max)],
+                    [(x_max, y_max, z_min), (x_max, y_max, z_max)],
+                    [(x_min, y_max, z_min), (x_min, y_max, z_max)]
+                ]
+
+                for edge in edges:
+                    self.ax.plot([edge[0][0], edge[1][0]], [edge[0][1], edge[1][1]],
+                               [edge[0][2], edge[1][2]], color='red', linewidth=2)
+
+            elif obs_type == 'cylinder':
+                # Draw cylinder obstacle
+                theta_obs = np.linspace(0, 2*np.pi, 20)
+                z_obs = np.linspace(pos[2] - size/2, pos[2] + size/2, 10)
+                theta_grid_obs, z_grid_obs = np.meshgrid(theta_obs, z_obs)
+                x_grid_obs = pos[0] + size/2 * np.cos(theta_grid_obs)
+                y_grid_obs = pos[1] + size/2 * np.sin(theta_grid_obs)
+                self.ax.plot_surface(x_grid_obs, y_grid_obs, z_grid_obs, alpha=0.7, color='orange')
+
+            else:
+                # Default to sphere for unknown types
+                u = np.linspace(0, 2 * np.pi, 20)
+                v = np.linspace(0, np.pi, 20)
+                x = pos[0] + size * np.outer(np.cos(u), np.sin(v))
+                y = pos[1] + size * np.outer(np.sin(u), np.sin(v))
+                z = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
+                self.ax.plot_surface(x, y, z, alpha=0.7, color='purple')
+
+        # Set axis limits
+        self.ax.set_xlim(-tunnel_radius*1.5, tunnel_radius*1.5)
+        self.ax.set_ylim(-tunnel_radius*1.5, tunnel_radius*1.5)
+        self.ax.set_zlim(-tunnel_length/2, tunnel_length/2)
+
+        self.ax.set_xlabel('X (m)')
+        self.ax.set_ylabel('Y (m)')
+        self.ax.set_zlabel('Z (m) - Tunnel Length')
+        self.ax.set_title('Fruit Fly Racer - 3D Tunnel View')
 
         self.canvas.draw()
 
@@ -458,17 +519,61 @@ class FruitFlyRacer3D:
         for line in self.ax.lines[:]:
             if hasattr(line, '_is_fly'):
                 line.remove()
+        for collection in self.ax.collections[:]:
+            if hasattr(collection, '_is_fly'):
+                collection.remove()
 
-        # Get fly position
+        # Get fly position and orientation
         fly_pos = self.fly_model.get_position()
+        fly_vel = self.fly_model.get_velocity()
 
-        # Draw fly as a point
-        fly_line, = self.ax.plot([fly_pos[0]], [fly_pos[1]], [fly_pos[2]],
-                                'ro', markersize=10, label='Fly')
-        fly_line._is_fly = True
+        # Draw fly as an elongated shape (like a real fly)
+        # Create a simple fly body representation
+        fly_size = 0.3  # Size of fly representation
 
-        # Update title with position
-        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f})')
+        # Draw fly body (elongated ellipsoid)
+        u = np.linspace(0, 2 * np.pi, 20)
+        v = np.linspace(0, np.pi, 20)
+
+        # Elongated along z-axis (direction of flight)
+        x = fly_pos[0] + fly_size * 0.5 * np.outer(np.cos(u), np.sin(v))
+        y = fly_pos[1] + fly_size * 0.5 * np.outer(np.sin(u), np.sin(v))
+        z = fly_pos[2] + fly_size * 2.0 * np.outer(np.ones(np.size(u)), np.cos(v))
+
+        fly_surface = self.ax.plot_surface(x, y, z, alpha=0.8, color='darkgreen')
+        fly_surface._is_fly = True
+
+        # Draw fly wings (two ellipses on sides)
+        wing_size = fly_size * 0.8
+        for side in [-1, 1]:  # Left and right wings
+            # Wing position offset
+            wing_x = fly_pos[0] + side * fly_size * 0.3
+            wing_y = fly_pos[1]
+            wing_z = fly_pos[2]
+
+            # Wing as flattened ellipsoid
+            u_wing = np.linspace(0, 2 * np.pi, 15)
+            v_wing = np.linspace(0, np.pi, 15)
+            x_wing = wing_x + wing_size * np.outer(np.cos(u_wing), np.sin(v_wing))
+            y_wing = wing_y + wing_size * 0.1 * np.outer(np.sin(u_wing), np.sin(v_wing))
+            z_wing = wing_z + wing_size * np.outer(np.ones(np.size(u_wing)), np.cos(v_wing))
+
+            wing_surface = self.ax.plot_surface(x_wing, y_wing, z_wing, alpha=0.6, color='lightblue')
+            wing_surface._is_fly = True
+
+        # Draw velocity vector (direction of flight)
+        if np.linalg.norm(fly_vel) > 0.1:
+            vel_scale = 2.0  # Scale velocity vector
+            vel_end = fly_pos + fly_vel * vel_scale
+            vel_line, = self.ax.plot([fly_pos[0], vel_end[0]],
+                                   [fly_pos[1], vel_end[1]],
+                                   [fly_pos[2], vel_end[2]],
+                                   color='yellow', linewidth=3, label='Velocity')
+            vel_line._is_fly = True
+
+        # Update title with position and velocity
+        speed = np.linalg.norm(fly_vel)
+        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}) | Speed: {speed:.1f} m/s')
 
         self.canvas.draw()
 
