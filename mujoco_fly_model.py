@@ -75,14 +75,16 @@ class MuJoCoFlyModel:
                     assets_dir = os.path.join(flybody_path, 'flybody', 'fruitfly', 'assets')
                     xml_string = xml_string.replace('file="', f'file="{assets_dir}/')
 
-                    # Add floor and lighting for visualization
+                    # Add floor and bright lighting for visualization
                     if '<floor' not in xml_string:
                         floor_xml = '''
-        <!-- Floor for visualization -->
-        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.8 0.8 0.8 1"/>
-        <!-- Lighting -->
+        <!-- Floor for visualization - bright gray -->
+        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.9 0.9 0.9 1"/>
+        <!-- Bright ambient lighting -->
+        <light name="ambient" pos="0 0 10" dir="0 0 -1" diffuse="1.0 1.0 1.0" specular="0.5 0.5 0.5"/>
         <light name="key" pos="0 -5 10" dir="0 1 -1" diffuse="0.8 0.8 0.8"/>
-        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.4 0.4 0.4"/>
+        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.6 0.6 0.6"/>
+        <light name="back" pos="0 10 5" dir="0 -1 -1" diffuse="0.4 0.4 0.4"/>
 '''
                         xml_string = xml_string.replace('</worldbody>', floor_xml + '</worldbody>')
 
@@ -105,14 +107,16 @@ class MuJoCoFlyModel:
                 with open(flybody_xml, 'r') as f:
                     xml_content = f.read()
 
-                # Add floor and lighting if not present
+                # Add floor and bright lighting if not present
                 if '<floor' not in xml_content:
                     floor_xml = '''
-        <!-- Floor for visualization -->
-        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.8 0.8 0.8 1"/>
-        <!-- Lighting -->
+        <!-- Floor for visualization - bright gray -->
+        <geom name="floor" type="plane" pos="0 0 -1" size="50 50 0.1" rgba="0.9 0.9 0.9 1"/>
+        <!-- Bright ambient lighting -->
+        <light name="ambient" pos="0 0 10" dir="0 0 -1" diffuse="1.0 1.0 1.0" specular="0.5 0.5 0.5"/>
         <light name="key" pos="0 -5 10" dir="0 1 -1" diffuse="0.8 0.8 0.8"/>
-        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.4 0.4 0.4"/>
+        <light name="fill" pos="5 5 5" dir="-1 -1 -1" diffuse="0.6 0.6 0.6"/>
+        <light name="back" pos="0 10 5" dir="0 -1 -1" diffuse="0.4 0.4 0.4"/>
 '''
                     xml_content = xml_content.replace('</worldbody>', floor_xml + '</worldbody>')
 

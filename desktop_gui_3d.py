@@ -210,10 +210,19 @@ class FruitFlyRacer3D:
     def stop_simulation(self):
         """Stop the simulation"""
         self.simulation_running = False
+        self.viewer_running = False
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Stopped", foreground="orange")
         self.log("Simulation stopped by user")
+
+        # Close renderer if it exists
+        if self.renderer is not None:
+            try:
+                self.renderer.close()
+            except:
+                pass
+            self.renderer = None
     
     def run_simulation(self):
         """Run the simulation loop"""
@@ -378,61 +387,69 @@ class FruitFlyRacer3D:
             # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
             from mujoco.rendering.classic.renderer import Renderer
             from PIL import Image, ImageTk
-            import mujoco
 
-            # Create renderer
+            # Create renderer in main thread (not background thread)
             self.renderer = Renderer(self.fly_model.model, height=600, width=800)
             self.viewer_running = True
+            self.frame_count = 0
 
             self.log("MuJoCo renderer started")
 
-            # Start render loop in separate thread
-            def render_loop():
-                try:
-                    frame_count = 0
-                    while self.viewer_running and self.simulation_running:
-                        try:
-                            # Update scene with camera
-                            # Use "hero" camera for best view, or "track1" for tracking
-                            cam_name = 'hero' if not self.spectator_mode else 'track1'
-                            self.renderer.update_scene(self.fly_model.data, camera=cam_name)
-
-                            # Render frame
-                            frame = self.renderer.render()
-                            frame_count += 1
-
-                            # Debug: Log frame info every 30 frames
-                            if frame_count % 30 == 0:
-                                self.log(f"Frame {frame_count}: shape={frame.shape}, dtype={frame.dtype}, min={frame.min()}, max={frame.max()}")
-                                self.log(f"Camera: {cam_name}")
-                                self.log(f"Fly position: {self.fly_model.get_position()}")
-
-                            # Convert to PIL Image and display in Tkinter
-                            img = Image.fromarray(frame)
-                            img_tk = ImageTk.PhotoImage(img)
-
-                            # Update canvas in main thread
-                            self.root.after(0, lambda: self.update_canvas(img_tk))
-
-                            time.sleep(0.033)  # ~30 FPS
-                        except Exception as e:
-                            self.log(f"Render error: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            break
-
-                    self.renderer.close()
-                    self.log(f"MuJoCo renderer stopped after {frame_count} frames")
-
-                except Exception as e:
-                    self.log(f"Render loop error: {e}")
-                    import traceback
-                    traceback.print_exc()
-
-            threading.Thread(target=render_loop, daemon=True).start()
+            # Start render loop using root.after (main thread)
+            self.render_frame()
 
         except Exception as e:
             self.log(f"Viewer error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def render_frame(self):
+        """Render a single frame and schedule next frame"""
+        if not self.viewer_running or not self.simulation_running:
+            return
+
+        try:
+            if self.renderer is None:
+                return
+
+            # Update scene with camera
+            cam_name = 'hero' if not self.spectator_mode else 'track1'
+
+            try:
+                self.renderer.update_scene(self.fly_model.data, camera=cam_name)
+            except Exception as cam_error:
+                self.log(f"Camera '{cam_name}' failed: {cam_error}, using default")
+                self.renderer.update_scene(self.fly_model.data)
+
+            # Render frame
+            frame = self.renderer.render()
+            self.frame_count += 1
+
+            # Debug: Log frame info every 30 frames
+            if self.frame_count % 30 == 0:
+                self.log(f"Frame {self.frame_count}: shape={frame.shape}, min={frame.min()}, max={frame.max()}, mean={frame.mean():.2f}")
+                self.log(f"Camera: {cam_name}")
+                self.log(f"Fly position: {self.fly_model.get_position()}")
+
+            # Check if frame is all black
+            if frame.max() == 0:
+                self.log(f"WARNING: Frame {self.frame_count} is completely black!")
+
+            # Convert to PIL Image and display in Tkinter
+            img = Image.fromarray(frame)
+            img_tk = ImageTk.PhotoImage(img)
+
+            # Update canvas
+            self.update_canvas(img_tk)
+
+            # Schedule next frame (~30 FPS)
+            self.root.after(33, self.render_frame)
+
+        except Exception as e:
+            self.log(f"Render error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.viewer_running = False
 
     def update_canvas(self, img_tk):
         """Update Tkinter canvas with rendered frame"""
@@ -545,8 +562,15 @@ class FruitFlyRacer3D:
     def on_closing(self):
         """Handle window close"""
         self.simulation_running = False
-        if self.viewer is not None:
-            self.viewer_running = False
+        self.viewer_running = False
+
+        # Close renderer if it exists
+        if self.renderer is not None:
+            try:
+                self.renderer.close()
+            except:
+                pass
+
         self.root.destroy()
 
 
