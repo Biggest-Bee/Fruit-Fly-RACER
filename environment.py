@@ -37,7 +37,7 @@ class RacingEnvironment:
         
         # Obstacles
         self.obstacles = []
-        self.obstacle_types = ['triangle', 'cube', 'rectangle', 'plane', 'wall', 'cone']
+        self.obstacle_types = ['sphere', 'box', 'cylinder']
         
         # Physics limits
         self.current_speed = 0.0

@@ -285,13 +285,13 @@ class MuJoCoFlyModel:
         # Apply flight force (virtual wing flapping)
         # Since flybody is a walking model, we add forward thrust
         if desired_velocity is not None:
-            # Apply forward force in z direction (through tunnel)
-            forward_force = desired_velocity[2] * 10.0  # Scale force
-            self.data.qfrc_applied[2] += forward_force
+            # Apply forward force in x direction (through horizontal tunnel)
+            forward_force = desired_velocity[0] * 10.0  # Scale force
+            self.data.qfrc_applied[0] += forward_force
 
-            # Add some lift to keep fly airborne
+            # Add some lift to keep fly airborne (y direction is up in tunnel)
             lift_force = 5.0  # Constant upward force
-            self.data.qfrc_applied[2] += lift_force
+            self.data.qfrc_applied[1] += lift_force
 
         # Step MuJoCo physics
         mujoco.mj_step(self.model, self.data)

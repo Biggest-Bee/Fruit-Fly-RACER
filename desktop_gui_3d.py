@@ -373,10 +373,6 @@ class FruitFlyRacer3D:
                 # Get current position and velocity from fly model
                 position = self.fly_model.get_position()
                 velocity = self.fly_model.get_velocity()
-
-                # Log position every 100 steps to check for teleporting
-                if step % 100 == 0:
-                    self.log(f"Step {step}: pos=({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), vel=({velocity[0]:.2f}, {velocity[1]:.2f}, {velocity[2]:.2f})")
                 
                 # Update wind
                 wind = self.environment.update_wind(step * dt)
@@ -390,8 +386,8 @@ class FruitFlyRacer3D:
                 # Apply actuator commands to the fly
                 self.fly_model.apply_neural_control(actuator_commands)
 
-                # Generate desired velocity for flight (forward + slight lift)
-                desired_velocity = np.array([0.0, 0.0, self.environment.max_speed * 0.8])  # Forward at 80% max speed
+                # Generate desired velocity for flight (forward along X-axis + slight lift)
+                desired_velocity = np.array([self.environment.max_speed * 0.8, 0.0, 0.0])  # Forward along X-axis
                 desired_turn = np.array([0.0, 0.0])  # No turning for now
 
                 # Step MuJoCo physics with flight force
@@ -504,7 +500,9 @@ class FruitFlyRacer3D:
         # Draw obstacles as different shapes - convert from z-direction to x-direction
         for i, obs in enumerate(self.environment.obstacles):
             # Convert obstacle position: [x, y, z] -> [z, x, y] (tunnel is along X now)
-            pos = np.array([obs['position'][2], obs['position'][0], obs['position'][1]])
+            # Original: x=lateral, y=vertical, z=tunnel direction
+            # New: x=tunnel direction, y=vertical, z=lateral
+            pos = np.array([obs['position'][2], obs['position'][1], obs['position'][0]])
             size = obs['size']
             obs_type = obs.get('type', 'sphere')
 
@@ -596,9 +594,11 @@ class FruitFlyRacer3D:
         fly_pos_z = self.fly_model.get_position()
         fly_vel_z = self.fly_model.get_velocity()
 
-        # Convert coordinates: z -> x, x -> y, y -> z
-        fly_pos = np.array([fly_pos_z[2], fly_pos_z[0], fly_pos_z[1]])
-        fly_vel = np.array([fly_vel_z[2], fly_vel_z[0], fly_vel_z[1]])
+        # Convert coordinates: z -> x, y -> y, x -> z
+        # Original: x=lateral, y=vertical, z=tunnel direction
+        # New: x=tunnel direction, y=vertical, z=lateral
+        fly_pos = np.array([fly_pos_z[2], fly_pos_z[1], fly_pos_z[0]])
+        fly_vel = np.array([fly_vel_z[2], fly_vel_z[1], fly_vel_z[0]])
 
         # Update camera to follow fly if not in spectator mode
         if not self.spectator_mode:
