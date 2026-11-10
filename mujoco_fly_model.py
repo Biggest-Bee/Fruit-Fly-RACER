@@ -53,21 +53,45 @@ class MuJoCoFlyModel:
             print(f"Connectome integration: {connectome_weights.shape} weights loaded")
     
     def load_official_flybody(self):
-        """Load the official flybody MuJoCo XML model"""
+        """Load the official flybody model using the full flybody package"""
         try:
-            # Path to official flybody XML (from embedded flybody folder)
-            flybody_xml = "flybody/flybody/fruitfly/assets/fruitfly.xml"
-            
-            if not os.path.exists(flybody_xml):
-                raise FileNotFoundError(f"flybody XML not found at {flybody_xml}")
-            
-            # Load the official model
-            self.model = mujoco.MjModel.from_xml_path(flybody_xml)
-            self.data = mujoco.MjData(self.model)
-            
+            # Add flybody to Python path
+            import sys
+            flybody_path = os.path.join(os.path.dirname(__file__), 'flybody')
+            if flybody_path not in sys.path:
+                sys.path.insert(0, flybody_path)
+
+            # Try to import the full flybody package
+            try:
+                from flybody.fruitfly import fruitfly
+                self.fly_model = fruitfly.FruitFly()
+
+                # Get the MJCF model and convert to XML string
+                if hasattr(self.fly_model, 'mjcf_model'):
+                    xml_string = self.fly_model.mjcf_model.to_xml_string()
+
+                    # Load the XML string with MuJoCo
+                    self.model = mujoco.MjModel.from_xml_string(xml_string)
+                    self.data = mujoco.MjData(self.model)
+                    print("Loaded official flybody using full package")
+                else:
+                    raise AttributeError("FruitFly model doesn't have mjcf_model")
+            except Exception as e:
+                print(f"Full flybody package failed: {e}")
+                print("Falling back to direct XML loading...")
+
+                # Fallback: load XML directly
+                flybody_xml = "flybody/flybody/fruitfly/assets/fruitfly.xml"
+                if not os.path.exists(flybody_xml):
+                    raise FileNotFoundError(f"flybody XML not found at {flybody_xml}")
+
+                self.model = mujoco.MjModel.from_xml_path(flybody_xml)
+                self.data = mujoco.MjData(self.model)
+                print("Loaded official flybody using direct XML")
+
             print(f"Loaded official flybody model: {self.model.nq} DOF, {self.model.nu} actuators")
             print(f"Body count: {self.model.nbody}, Joint count: {self.model.njnt}")
-            
+
         except Exception as e:
             print(f"Error loading official flybody: {e}")
             raise
