@@ -70,6 +70,11 @@ class MuJoCoFlyModel:
                 if hasattr(self.fly_model, 'mjcf_model'):
                     xml_string = self.fly_model.mjcf_model.to_xml_string()
 
+                    # Modify XML string to use absolute paths for OBJ files
+                    # Replace relative paths with absolute paths to assets directory
+                    assets_dir = os.path.join(flybody_path, 'flybody', 'fruitfly', 'assets')
+                    xml_string = xml_string.replace('file="', f'file="{assets_dir}/')
+
                     # Load the XML string with MuJoCo
                     self.model = mujoco.MjModel.from_xml_string(xml_string)
                     self.data = mujoco.MjData(self.model)
