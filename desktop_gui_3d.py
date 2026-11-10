@@ -54,6 +54,17 @@ class FruitFlyRacer3D:
         self.viewer = None
         self.renderer = None
         self.viewer_running = False
+
+        # Spectator mode
+        self.spectator_mode = False
+        self.camera_pos = np.array([0.0, -10.0, 0.0])  # Start behind fly
+        self.camera_target = np.array([0.0, 0.0, 0.0])
+        self.camera_distance = 10.0
+        self.camera_height = 5.0
+
+        # Best time tracking
+        self.best_time = float('inf')
+        self.current_episode_start = None
         
         # Create GUI
         self.create_menu()
@@ -105,25 +116,38 @@ class FruitFlyRacer3D:
         # Buttons
         self.start_btn = ttk.Button(left_frame, text="Start Simulation", command=self.start_simulation)
         self.start_btn.pack(fill=tk.X, pady=10)
-        
+
         self.stop_btn = ttk.Button(left_frame, text="Stop Simulation", command=self.stop_simulation, state=tk.DISABLED)
         self.stop_btn.pack(fill=tk.X, pady=5)
-        
+
+        # Spectator mode toggle
+        self.spectator_var = tk.BooleanVar(value=False)
+        spectator_check = ttk.Checkbutton(left_frame, text="Spectator Mode", variable=self.spectator_var,
+                                         command=self.toggle_spectator_mode)
+        spectator_check.pack(fill=tk.X, pady=5)
+
+        # Camera controls hint
+        ttk.Label(left_frame, text="Camera: WASD to move, Mouse to look", 
+                 font=("Arial", 8), foreground="gray").pack(anchor=tk.W, pady=2)
+
         # Status panel
         status_frame = ttk.LabelFrame(left_frame, text="Status", padding=10)
         status_frame.pack(fill=tk.X, pady=10)
-        
+
         self.status_label = ttk.Label(status_frame, text="Ready", font=("Arial", 10, "bold"))
         self.status_label.pack(anchor=tk.W, pady=2)
-        
+
         self.sim_count_label = ttk.Label(status_frame, text="Simulation: 0")
         self.sim_count_label.pack(anchor=tk.W, pady=2)
-        
+
         self.best_score_label = ttk.Label(status_frame, text="Best Score: 0.0")
         self.best_score_label.pack(anchor=tk.W, pady=2)
-        
+
         self.best_progress_label = ttk.Label(status_frame, text="Best Progress: 0.00%")
         self.best_progress_label.pack(anchor=tk.W, pady=2)
+
+        self.best_time_label = ttk.Label(status_frame, text="Best Time: --")
+        self.best_time_label.pack(anchor=tk.W, pady=2)
         
         # Right panel - 3D View and Log
         right_frame = ttk.Frame(main_frame)
@@ -214,13 +238,20 @@ class FruitFlyRacer3D:
                     self.log(f"Episode {episode_count}: Starting...")
 
                 # Run one simulation episode
+                episode_start = time.time()
                 result = self.run_single_episode()
+                episode_time = time.time() - episode_start
 
                 # Update best scores
                 if result['score'] > self.best_score:
                     self.best_score = result['score']
                     self.best_progress = result['progress']
                     self.log(f"New best! Score: {self.best_score:.1f}, Progress: {self.best_progress:.1%}")
+
+                # Update best time (only if finished)
+                if result.get('finish_reached', False) and episode_time < self.best_time:
+                    self.best_time = episode_time
+                    self.log(f"New best time! {self.best_time:.2f}s")
 
                 # Update GUI every 10 episodes
                 if episode_count % 10 == 0:
@@ -349,6 +380,7 @@ class FruitFlyRacer3D:
             # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
             from mujoco.rendering.classic.renderer import Renderer
             from PIL import Image, ImageTk
+            import mujoco
 
             # Create renderer
             self.renderer = Renderer(self.fly_model.model, height=600, width=800)
@@ -361,8 +393,31 @@ class FruitFlyRacer3D:
                 try:
                     while self.viewer_running and self.simulation_running:
                         try:
-                            # Update scene and render
+                            # Update scene
                             self.renderer.update_scene(self.fly_model.data)
+
+                            # Set camera based on spectator mode
+                            if self.spectator_mode:
+                                cam_pos, cam_target = self.update_camera()
+                                # Set camera position and target
+                                self.renderer.cam.lookat[:] = cam_target
+                                self.renderer.cam.distance = np.linalg.norm(cam_pos - cam_target)
+                                # Calculate camera angles
+                                direction = cam_pos - cam_target
+                                self.renderer.cam.azimuth = np.degrees(np.arctan2(direction[1], direction[0]))
+                                self.renderer.cam.elevation = np.degrees(np.arctan2(direction[2], np.sqrt(direction[0]**2 + direction[1]**2)))
+                            else:
+                                # Follow fly
+                                fly_pos = self.fly_model.get_position()
+                                cam_pos = fly_pos + np.array([0, -10, 5])
+                                cam_target = fly_pos
+                                direction = cam_pos - cam_target
+                                self.renderer.cam.lookat[:] = cam_target
+                                self.renderer.cam.distance = np.linalg.norm(direction)
+                                self.renderer.cam.azimuth = np.degrees(np.arctan2(direction[1], direction[0]))
+                                self.renderer.cam.elevation = np.degrees(np.arctan2(direction[2], np.sqrt(direction[0]**2 + direction[1]**2)))
+
+                            # Render frame
                             frame = self.renderer.render()
 
                             # Convert to PIL Image and display in Tkinter
@@ -399,11 +454,73 @@ class FruitFlyRacer3D:
         except Exception as e:
             self.log(f"Canvas update error: {e}")
     
+    def toggle_spectator_mode(self):
+        """Toggle spectator mode"""
+        self.spectator_mode = self.spectator_var.get()
+        if self.spectator_mode:
+            self.log("Spectator mode enabled - you can move camera freely")
+            # Bind mouse and keyboard events
+            self.canvas.bind("<Motion>", self.on_mouse_move)
+            self.canvas.bind("<ButtonPress-1>", self.on_mouse_click)
+            self.canvas.focus_set()
+        else:
+            self.log("Spectator mode disabled - camera follows fly")
+            self.canvas.unbind("<Motion>")
+            self.canvas.unbind("<ButtonPress-1>")
+
+    def on_mouse_move(self, event):
+        """Handle mouse movement for camera control"""
+        if not self.spectator_mode:
+            return
+
+        # Update camera target based on mouse position
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+
+        # Normalize mouse position to [-1, 1]
+        x = (event.x / canvas_width) * 2 - 1
+        y = (event.y / canvas_height) * 2 - 1
+
+        # Update camera angles
+        self.camera_target[0] = self.camera_pos[0] + x * self.camera_distance
+        self.camera_target[1] = self.camera_pos[1] + y * self.camera_distance
+        self.camera_target[2] = self.camera_pos[2]
+
+    def on_mouse_click(self, event):
+        """Handle mouse click for camera control"""
+        if not self.spectator_mode:
+            return
+
+        # Move camera forward/backward based on click
+        if event.num == 1:  # Left click - move forward
+            self.camera_pos[2] += 1.0
+        elif event.num == 3:  # Right click - move backward
+            self.camera_pos[2] -= 1.0
+
+    def update_camera(self):
+        """Update camera position based on spectator mode"""
+        if self.spectator_mode:
+            # Use spectator camera position
+            return self.camera_pos, self.camera_target
+        else:
+            # Follow fly position
+            fly_pos = self.fly_model.get_position()
+            # Camera behind and above fly
+            camera_pos = fly_pos + np.array([0, -self.camera_distance, self.camera_height])
+            camera_target = fly_pos
+            return camera_pos, camera_target
+
     def update_status(self):
         """Update status display"""
         self.sim_count_label.config(text=f"Simulation: {self.current_simulation}")
         self.best_score_label.config(text=f"Best Score: {self.best_score:.1f}")
         self.best_progress_label.config(text=f"Best Progress: {self.best_progress*100:.2f}%")
+
+        # Update best time display
+        if self.best_time != float('inf'):
+            self.best_time_label.config(text=f"Best Time: {self.best_time:.2f}s")
+        else:
+            self.best_time_label.config(text="Best Time: --")
     
     def simulation_complete(self):
         """Handle simulation completion"""
