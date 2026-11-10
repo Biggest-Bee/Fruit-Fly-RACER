@@ -128,22 +128,25 @@ class FruitFlyRacer3D:
         # Right panel - 3D View and Log
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # 3D View placeholder
+
+        # 3D View - embedded MuJoCo renderer
         view_frame = ttk.LabelFrame(right_frame, text="3D View (MuJoCo)", padding=10)
         view_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        self.view_label = ttk.Label(view_frame, text="3D view will open in separate window when simulation starts", 
-                                    font=("Arial", 12), foreground="gray")
-        self.view_label.pack(expand=True)
-        
+
+        # Create canvas for 3D rendering
+        self.canvas = tk.Canvas(view_frame, bg="black", width=800, height=600)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        # Store current image for display
+        self.current_image = None
+
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        
+
         # Log the initialization
         self.log("Fruit Fly Racer 3D initialized")
         self.log("Click 'Start Simulation' to begin training")
@@ -337,40 +340,64 @@ class FruitFlyRacer3D:
         pass
     
     def start_mujoco_viewer(self):
-        """Start MuJoCo viewer in separate thread"""
+        """Start MuJoCo renderer embedded in Tkinter"""
         if self.fly_model.model is None or self.fly_model.data is None:
             self.log("Error: Fly model not loaded")
             return
 
-        def viewer_thread():
-            try:
-                # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
-                from mujoco.rendering.classic.renderer import Renderer
+        try:
+            # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
+            from mujoco.rendering.classic.renderer import Renderer
+            from PIL import Image, ImageTk
 
-                # Create renderer
-                self.renderer = Renderer(self.fly_model.model, height=480, width=640)
-                self.viewer_running = True
+            # Create renderer
+            self.renderer = Renderer(self.fly_model.model, height=600, width=800)
+            self.viewer_running = True
 
-                self.log("MuJoCo renderer started")
+            self.log("MuJoCo renderer started")
 
-                # Render loop
-                while self.viewer_running and self.simulation_running:
-                    try:
-                        # Update scene and render
-                        self.renderer.update_scene(self.fly_model.data)
-                        self.renderer.render()
-                        time.sleep(0.016)  # ~60 FPS
-                    except Exception as e:
-                        self.log(f"Render error: {e}")
-                        break
+            # Start render loop in separate thread
+            def render_loop():
+                try:
+                    while self.viewer_running and self.simulation_running:
+                        try:
+                            # Update scene and render
+                            self.renderer.update_scene(self.fly_model.data)
+                            frame = self.renderer.render()
 
-                self.renderer.close()
-                self.log("MuJoCo renderer stopped")
+                            # Convert to PIL Image and display in Tkinter
+                            img = Image.fromarray(frame)
+                            img_tk = ImageTk.PhotoImage(img)
 
-            except Exception as e:
-                self.log(f"Viewer error: {e}")
+                            # Update canvas in main thread
+                            self.root.after(0, lambda: self.update_canvas(img_tk))
 
-        threading.Thread(target=viewer_thread, daemon=True).start()
+                            time.sleep(0.033)  # ~30 FPS
+                        except Exception as e:
+                            self.log(f"Render error: {e}")
+                            break
+
+                    self.renderer.close()
+                    self.log("MuJoCo renderer stopped")
+
+                except Exception as e:
+                    self.log(f"Render loop error: {e}")
+
+            threading.Thread(target=render_loop, daemon=True).start()
+
+        except Exception as e:
+            self.log(f"Viewer error: {e}")
+
+    def update_canvas(self, img_tk):
+        """Update Tkinter canvas with rendered frame"""
+        try:
+            # Clear canvas and display new image
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
+            # Keep reference to prevent garbage collection
+            self.canvas.image = img_tk
+        except Exception as e:
+            self.log(f"Canvas update error: {e}")
     
     def update_status(self):
         """Update status display"""
