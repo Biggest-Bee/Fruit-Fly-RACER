@@ -229,13 +229,17 @@ class FruitFlyRacer3D:
             
             # Run simulation loop
             episode_count = 0
+            step_count = 0
             while self.simulation_running and self.current_simulation < self.num_simulations:
                 self.current_simulation += 1
                 episode_count += 1
+                step_count = 0
 
                 # Only log every 10 episodes to reduce spam
                 if episode_count % 10 == 1:
                     self.log(f"Episode {episode_count}: Starting...")
+                    self.log(f"Environment: {len(self.environment.obstacles)} obstacles")
+                    self.log(f"Fly model: {self.fly_model.model.nq} DOF, {self.fly_model.model.nu} actuators")
 
                 # Run one simulation episode
                 episode_start = time.time()
@@ -288,7 +292,14 @@ class FruitFlyRacer3D:
             
             while step < max_steps and self.simulation_running:
                 step += 1
-                
+                step_count += 1
+
+                # Log every 100 steps
+                if step_count % 100 == 0:
+                    pos = self.fly_model.get_position()
+                    vel = self.fly_model.get_velocity()
+                    self.log(f"Step {step_count}: pos=({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}), vel=({vel[0]:.2f}, {vel[1]:.2f}, {vel[2]:.2f})")
+
                 # Get current position and velocity from fly model
                 position = self.fly_model.get_position()
                 velocity = self.fly_model.get_velocity()
@@ -391,6 +402,7 @@ class FruitFlyRacer3D:
             # Start render loop in separate thread
             def render_loop():
                 try:
+                    frame_count = 0
                     while self.viewer_running and self.simulation_running:
                         try:
                             # Update scene
@@ -399,10 +411,8 @@ class FruitFlyRacer3D:
                             # Set camera based on spectator mode
                             if self.spectator_mode:
                                 cam_pos, cam_target = self.update_camera()
-                                # Set camera position and target
                                 self.renderer.cam.lookat[:] = cam_target
                                 self.renderer.cam.distance = np.linalg.norm(cam_pos - cam_target)
-                                # Calculate camera angles
                                 direction = cam_pos - cam_target
                                 self.renderer.cam.azimuth = np.degrees(np.arctan2(direction[1], direction[0]))
                                 self.renderer.cam.elevation = np.degrees(np.arctan2(direction[2], np.sqrt(direction[0]**2 + direction[1]**2)))
@@ -419,6 +429,13 @@ class FruitFlyRacer3D:
 
                             # Render frame
                             frame = self.renderer.render()
+                            frame_count += 1
+
+                            # Debug: Log frame info every 30 frames
+                            if frame_count % 30 == 0:
+                                self.log(f"Frame {frame_count}: shape={frame.shape}, dtype={frame.dtype}, min={frame.min()}, max={frame.max()}")
+                                self.log(f"Camera: pos={cam_pos}, target={cam_target}, distance={self.renderer.cam.distance}")
+                                self.log(f"Fly position: {self.fly_model.get_position()}")
 
                             # Convert to PIL Image and display in Tkinter
                             img = Image.fromarray(frame)
@@ -430,13 +447,17 @@ class FruitFlyRacer3D:
                             time.sleep(0.033)  # ~30 FPS
                         except Exception as e:
                             self.log(f"Render error: {e}")
+                            import traceback
+                            traceback.print_exc()
                             break
 
                     self.renderer.close()
-                    self.log("MuJoCo renderer stopped")
+                    self.log(f"MuJoCo renderer stopped after {frame_count} frames")
 
                 except Exception as e:
                     self.log(f"Render loop error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             threading.Thread(target=render_loop, daemon=True).start()
 
@@ -446,6 +467,13 @@ class FruitFlyRacer3D:
     def update_canvas(self, img_tk):
         """Update Tkinter canvas with rendered frame"""
         try:
+            # Debug: Log canvas update
+            if not hasattr(self, '_canvas_update_count'):
+                self._canvas_update_count = 0
+            self._canvas_update_count += 1
+            if self._canvas_update_count % 30 == 0:
+                self.log(f"Canvas updated {self._canvas_update_count} times")
+
             # Clear canvas and display new image
             self.canvas.delete("all")
             self.canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
