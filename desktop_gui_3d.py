@@ -46,7 +46,7 @@ class FruitFlyRacer3D:
         self.best_progress = 0.0
         
         # Initialize modules
-        self.environment = RacingEnvironment(tunnel_length=100.0, tunnel_radius=5.0)
+        self.environment = RacingEnvironment(tunnel_length=200.0, tunnel_radius=10.0)
         self.fly_model = MuJoCoFlyModel()
         self.fly_model.load_connectome()
         self.agent = AgentLogic(input_size=100)

@@ -15,7 +15,7 @@ class RacingEnvironment:
     3D racing tunnel environment with MuJoCo physics
     """
     
-    def __init__(self, tunnel_length: float = 100.0, tunnel_radius: float = 5.0):
+    def __init__(self, tunnel_length: float = 200.0, tunnel_radius: float = 10.0):
         """
         Initialize the racing environment
         
@@ -368,18 +368,19 @@ class RacingEnvironment:
     def get_progress_to_finish(self, position: np.ndarray) -> float:
         """
         Calculate progress to finish line (0 to 1)
-        
+
         Args:
-            position: Current 3D position
-            
+            position: Current 3D position [x, y, z] where x is tunnel direction
+
         Returns:
             Progress value between 0 and 1
         """
-        z = position[2]
-        start_z = -self.tunnel_length / 2
-        finish_z = self.tunnel_length / 2
-        
-        progress = (z - start_z) / (finish_z - start_z)
+        # For horizontal tunnel, progress is along X-axis
+        x = position[0]
+        start_x = -self.tunnel_length / 2
+        finish_x = self.tunnel_length / 2
+
+        progress = (x - start_x) / (finish_x - start_x)
         return np.clip(progress, 0.0, 1.0)
 
 

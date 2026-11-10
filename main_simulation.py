@@ -46,8 +46,8 @@ class FruitFlyRacer:
         
         # Environment
         self.environment = RacingEnvironment(
-            tunnel_length=100.0,
-            tunnel_radius=5.0
+            tunnel_length=200.0,
+            tunnel_radius=10.0
         )
         
         # MuJoCo Fly Model (loads official flybody automatically)
