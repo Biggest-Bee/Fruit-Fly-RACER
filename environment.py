@@ -47,6 +47,25 @@ class RacingEnvironment:
         self.current_position = np.array([0.0, 0.0, 0.0])
         
         print(f"Racing Environment initialized: {tunnel_length}m tunnel, {tunnel_radius}m radius")
+
+    def reset(self):
+        """Reset the environment to initial state"""
+        # Reset wind
+        self.wind_direction = np.array([1.0, 0.0, 0.0])
+        self.wind_base_speed = 0.5
+        self.wind_turbulence = 0.3
+
+        # Reset physics state
+        self.current_speed = 0.0
+        self.current_velocity = np.array([0.0, 0.0, 0.0])
+        self.current_altitude = 0.0
+        self.current_direction = np.array([0.0, 0.0, 1.0])
+        self.current_position = np.array([0.0, 0.0, -self.tunnel_length / 2])
+
+        # Clear obstacles (will be regenerated)
+        self.obstacles = []
+
+        print("Environment reset")
     
     def generate_tunnel_mjcf(self) -> str:
         """

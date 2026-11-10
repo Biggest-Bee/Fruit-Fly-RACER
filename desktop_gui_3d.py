@@ -50,8 +50,9 @@ class FruitFlyRacer3D:
             remote_url=None
         )
         
-        # MuJoCo viewer
+        # MuJoCo viewer/renderer
         self.viewer = None
+        self.renderer = None
         self.viewer_running = False
         
         # Create GUI
@@ -271,9 +272,12 @@ class FruitFlyRacer3D:
                 reward = self.rewards.calculate_progress_reward(progress)
                 self.rewards.update_total_points(reward=reward)
                 
-                # Step MuJoCo viewer
+                # Step MuJoCo viewer (if available)
                 if self.viewer is not None:
-                    self.viewer.sync()
+                    try:
+                        self.viewer.sync()
+                    except:
+                        pass
             
             return {
                 'score': self.rewards.total_points,
@@ -303,23 +307,35 @@ class FruitFlyRacer3D:
         if self.fly_model.model is None or self.fly_model.data is None:
             self.log("Error: Fly model not loaded")
             return
-        
+
         def viewer_thread():
             try:
-                self.viewer = mujoco.viewer.launch_passive(
-                    self.fly_model.model, self.fly_model.data
-                )
+                # MuJoCo 3.16.0 uses mujoco.rendering.classic.renderer.Renderer
+                from mujoco.rendering.classic.renderer import Renderer
+
+                # Create renderer
+                self.renderer = Renderer(self.fly_model.model, height=480, width=640)
                 self.viewer_running = True
-                
+
+                self.log("MuJoCo renderer started")
+
+                # Render loop
                 while self.viewer_running and self.simulation_running:
-                    self.viewer.sync()
-                    time.sleep(0.001)
-                
-                self.viewer.close()
-                
+                    try:
+                        # Update scene and render
+                        self.renderer.update_scene(self.fly_model.data)
+                        self.renderer.render()
+                        time.sleep(0.016)  # ~60 FPS
+                    except Exception as e:
+                        self.log(f"Render error: {e}")
+                        break
+
+                self.renderer.close()
+                self.log("MuJoCo renderer stopped")
+
             except Exception as e:
                 self.log(f"Viewer error: {e}")
-        
+
         threading.Thread(target=viewer_thread, daemon=True).start()
     
     def update_status(self):
