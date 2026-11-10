@@ -298,6 +298,35 @@ class MuJoCoFlyModel:
 
         # Clear applied forces
         self.data.qfrc_applied[:] = 0.0
+
+        # Limit velocity to prevent teleporting
+        max_speed = 5.0  # m/s
+        current_speed = np.linalg.norm(self.data.qvel[:3])
+        if current_speed > max_speed:
+            # Scale down velocity to max speed
+            scale = max_speed / current_speed
+            self.data.qvel[:3] *= scale
+
+        # Smooth position updates (prevent teleporting)
+        # Only allow small position changes per step
+        max_position_change = max_speed * dt  # Max distance per step
+        if self.data is not None:
+            # Store previous position
+            if not hasattr(self, '_prev_pos'):
+                self._prev_pos = self.data.qpos[:3].copy()
+
+            # Calculate actual position change
+            current_pos = self.data.qpos[:3]
+            pos_change = np.linalg.norm(current_pos - self._prev_pos)
+
+            # If position changed too much, interpolate
+            if pos_change > max_position_change:
+                # Move towards previous position + max allowed change
+                direction = (current_pos - self._prev_pos) / pos_change
+                new_pos = self._prev_pos + direction * max_position_change
+                self.data.qpos[:3] = new_pos
+
+            self._prev_pos = self.data.qpos[:3].copy()
     
     def reset(self):
         """Reset the simulation to initial state"""

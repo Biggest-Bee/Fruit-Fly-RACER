@@ -244,12 +244,14 @@ class FruitFlyRacer3D:
         """Run the simulation loop"""
         try:
             # Generate obstacles
+            self.log("Generating obstacles...")
             self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
-            
+            self.log(f"Generated {len(self.environment.obstacles)} obstacles")
+
             # Create MuJoCo scene with tunnel and obstacles
             self.create_mujoco_scene()
-            
-            # Start MuJoCo viewer
+
+            # Start 3D visualization
             self.start_mujoco_viewer()
             
             # Run simulation loop
@@ -343,6 +345,10 @@ class FruitFlyRacer3D:
                 # Get current position and velocity from fly model
                 position = self.fly_model.get_position()
                 velocity = self.fly_model.get_velocity()
+
+                # Log position every 100 steps to check for teleporting
+                if step % 100 == 0:
+                    self.log(f"Step {step}: pos=({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}), vel=({velocity[0]:.2f}, {velocity[1]:.2f}, {velocity[2]:.2f})")
                 
                 # Update wind
                 wind = self.environment.update_wind(step * dt)
@@ -467,12 +473,16 @@ class FruitFlyRacer3D:
         x_cap_finish = np.full_like(theta_cap, tunnel_length/2)
         self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=2, label='Finish')
 
-        # Draw obstacles as different shapes - now positioned along X-axis
+        # Draw obstacles as different shapes - convert from z-direction to x-direction
         for i, obs in enumerate(self.environment.obstacles):
-            # Convert obstacle position: z -> x (tunnel direction)
+            # Convert obstacle position: [x, y, z] -> [z, x, y] (tunnel is along X now)
             pos = np.array([obs['position'][2], obs['position'][0], obs['position'][1]])
             size = obs['size']
             obs_type = obs.get('type', 'sphere')
+
+            # Debug: Log first few obstacles
+            if i < 3:
+                self.log(f"Obstacle {i}: type={obs_type}, pos={obs['position']}, converted={pos}, size={size}")
 
             # Draw obstacle based on type
             if obs_type == 'sphere':
