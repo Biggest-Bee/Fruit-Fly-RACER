@@ -185,15 +185,15 @@ class FruitFlyRacer3D:
         self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
         self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
 
-        # Draw tunnel
-        self.draw_tunnel()
-
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+        # Draw tunnel (after log_text is created)
+        self.draw_tunnel()
 
         # Log the initialization
         self.log("Fruit Fly Racer 3D initialized")
@@ -498,17 +498,19 @@ class FruitFlyRacer3D:
         self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=2, label='Finish')
 
         # Draw obstacles as different shapes - convert from z-direction to x-direction
+        obstacle_count = 0
         for i, obs in enumerate(self.environment.obstacles):
-            # Convert obstacle position: [x, y, z] -> [z, x, y] (tunnel is along X now)
+            # Convert obstacle position: [x, y, z] -> [z, y, x] (tunnel is along X now)
             # Original: x=lateral, y=vertical, z=tunnel direction
             # New: x=tunnel direction, y=vertical, z=lateral
             pos = np.array([obs['position'][2], obs['position'][1], obs['position'][0]])
             size = obs['size']
             obs_type = obs.get('type', 'sphere')
+            obstacle_count += 1
 
             # Debug: Log first few obstacles
-            if i < 3:
-                self.log(f"Obstacle {i}: type={obs_type}, pos={obs['position']}, converted={pos}, size={size}")
+            if i < 5:
+                self.log(f"Drawing obstacle {i}: type={obs_type}, pos={obs['position']}, converted={pos}, size={size}")
 
             # Draw obstacle based on type
             if obs_type == 'sphere':
@@ -563,6 +565,9 @@ class FruitFlyRacer3D:
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
                 self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='purple')
+
+        # Log obstacle count
+        self.log(f"Drawn {obstacle_count} obstacles in 3D view")
 
         # Set axis limits - horizontal tunnel
         self.ax.set_xlim(-tunnel_length/2, tunnel_length/2)

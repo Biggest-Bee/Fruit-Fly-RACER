@@ -301,22 +301,34 @@ class MuJoCoFlyModel:
 
         # Limit velocity to prevent teleporting
         max_speed = 5.0  # m/s
-        current_speed = np.linalg.norm(self.data.qvel[:3])
-        if current_speed > max_speed:
-            # Scale down velocity to max speed
-            scale = max_speed / current_speed
-            self.data.qvel[:3] *= scale
+        # Use body velocity for limiting (xvelp is linear velocity)
+        if self.model.nbody > 1:
+            current_speed = np.linalg.norm(self.data.xvelp[1])
+            if current_speed > max_speed:
+                # Scale down velocity to max speed
+                scale = max_speed / current_speed
+                self.data.xvelp[1] *= scale
+        else:
+            current_speed = np.linalg.norm(self.data.xvelp[0])
+            if current_speed > max_speed:
+                scale = max_speed / current_speed
+                self.data.xvelp[0] *= scale
 
         # Smooth position updates (prevent teleporting)
         # Only allow small position changes per step
         max_position_change = max_speed * dt  # Max distance per step
         if self.data is not None:
+            # Get current position using body position
+            if self.model.nbody > 1:
+                current_pos = self.data.xpos[1].copy()
+            else:
+                current_pos = self.data.xpos[0].copy()
+
             # Store previous position
             if not hasattr(self, '_prev_pos'):
-                self._prev_pos = self.data.qpos[:3].copy()
+                self._prev_pos = current_pos.copy()
 
             # Calculate actual position change
-            current_pos = self.data.qpos[:3]
             pos_change = np.linalg.norm(current_pos - self._prev_pos)
 
             # If position changed too much, interpolate
@@ -324,9 +336,13 @@ class MuJoCoFlyModel:
                 # Move towards previous position + max allowed change
                 direction = (current_pos - self._prev_pos) / pos_change
                 new_pos = self._prev_pos + direction * max_position_change
-                self.data.qpos[:3] = new_pos
+                # Update body position
+                if self.model.nbody > 1:
+                    self.data.xpos[1] = new_pos
+                else:
+                    self.data.xpos[0] = new_pos
 
-            self._prev_pos = self.data.qpos[:3].copy()
+            self._prev_pos = current_pos.copy()
     
     def reset(self):
         """Reset the simulation to initial state"""
@@ -334,16 +350,23 @@ class MuJoCoFlyModel:
             mujoco.mj_resetData(self.model, self.data)
     
     def get_position(self) -> np.ndarray:
-        """Get current fly position"""
+        """Get current fly position (world coordinates)"""
         if self.data is None:
             return np.array([0.0, 0.0, 0.0])
-        return self.data.qpos[:3]  # First 3 DOF are usually position
-    
+        # Use body position (xpos) instead of qpos for free joint
+        # Body 1 is usually the main body (thorax)
+        if self.model.nbody > 1:
+            return self.data.xpos[1]  # Thorax position
+        return self.data.xpos[0]  # Fallback to world body
+
     def get_velocity(self) -> np.ndarray:
         """Get current fly velocity"""
         if self.data is None:
             return np.array([0.0, 0.0, 0.0])
-        return self.data.qvel[:3]  # First 3 velocities
+        # Use body velocity (xvelp) for linear velocity
+        if self.model.nbody > 1:
+            return self.data.xvelp[1]  # Thorax linear velocity
+        return self.data.xvelp[0]  # Fallback
     
     def apply_neural_control(self, motor_commands: np.ndarray):
         """
