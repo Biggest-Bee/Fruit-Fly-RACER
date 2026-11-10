@@ -163,9 +163,11 @@ class FruitFlyRacer3D:
         view_frame = ttk.LabelFrame(right_frame, text="3D View", padding=10)
         view_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Create matplotlib figure and canvas
+        # Create matplotlib figure and canvas with transparent background
         self.fig = Figure(figsize=(8, 6), dpi=100)
+        self.fig.patch.set_alpha(0.0)  # Transparent figure background
         self.ax = self.fig.add_subplot(111, projection='3d')
+        self.ax.set_facecolor('none')  # Transparent axes background
         self.canvas = FigureCanvasTkAgg(self.fig, master=view_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -450,8 +452,8 @@ class FruitFlyRacer3D:
         y_grid = tunnel_radius * np.cos(theta_grid)
         z_grid = tunnel_radius * np.sin(theta_grid)
 
-        # Draw cylinder walls (semi-transparent)
-        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.3, color='blue', edgecolor='none')
+        # Draw cylinder walls (opaque)
+        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=1.0, color='blue', edgecolor='none')
 
         # Draw tunnel end caps (start and finish)
         # Start cap (X = -tunnel_length/2)
@@ -474,13 +476,13 @@ class FruitFlyRacer3D:
 
             # Draw obstacle based on type
             if obs_type == 'sphere':
-                # Draw sphere
+                # Draw sphere (opaque)
                 u = np.linspace(0, 2 * np.pi, 20)
                 v = np.linspace(0, np.pi, 20)
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.7, color='red')
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='red')
 
             elif obs_type == 'box':
                 # Draw box
@@ -515,7 +517,7 @@ class FruitFlyRacer3D:
                 theta_grid_obs, x_grid_obs_cyl = np.meshgrid(theta_obs, x_obs_cyl)
                 y_grid_obs = pos[1] + size/2 * np.cos(theta_grid_obs)
                 z_grid_obs = pos[2] + size/2 * np.sin(theta_grid_obs)
-                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=0.7, color='orange')
+                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='orange')
 
             else:
                 # Default to sphere for unknown types
@@ -524,7 +526,7 @@ class FruitFlyRacer3D:
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.7, color='purple')
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='purple')
 
         # Set axis limits - horizontal tunnel
         self.ax.set_xlim(-tunnel_length/2, tunnel_length/2)
@@ -583,7 +585,7 @@ class FruitFlyRacer3D:
         y = fly_pos[1] + fly_size * 0.5 * np.outer(np.cos(u), np.sin(v))
         z = fly_pos[2] + fly_size * 0.5 * np.outer(np.sin(u), np.sin(v))
 
-        fly_surface = self.ax.plot_surface(x, y, z, alpha=0.8, color='darkgreen')
+        fly_surface = self.ax.plot_surface(x, y, z, alpha=1.0, color='darkgreen')
         fly_surface._is_fly = True
 
         # Draw fly wings (two ellipses on top/bottom)
@@ -601,7 +603,7 @@ class FruitFlyRacer3D:
             y_wing = wing_y + wing_size * 0.1 * np.outer(np.cos(u_wing), np.sin(v_wing))
             z_wing = wing_z + wing_size * np.outer(np.sin(u_wing), np.sin(v_wing))
 
-            wing_surface = self.ax.plot_surface(x_wing, y_wing, z_wing, alpha=0.6, color='lightblue')
+            wing_surface = self.ax.plot_surface(x_wing, y_wing, z_wing, alpha=1.0, color='lightblue')
             wing_surface._is_fly = True
 
         # Draw velocity vector (direction of flight)
