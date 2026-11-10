@@ -229,11 +229,9 @@ class FruitFlyRacer3D:
             
             # Run simulation loop
             episode_count = 0
-            step_count = 0
             while self.simulation_running and self.current_simulation < self.num_simulations:
                 self.current_simulation += 1
                 episode_count += 1
-                step_count = 0
 
                 # Only log every 10 episodes to reduce spam
                 if episode_count % 10 == 1:
@@ -284,12 +282,13 @@ class FruitFlyRacer3D:
             # Reset environment (only log occasionally)
             self.environment.reset()
             self.rewards.reset()
-            
+
             # Run for max steps
             max_steps = 1000
             step = 0
+            step_count = 0
             dt = 0.02
-            
+
             while step < max_steps and self.simulation_running:
                 step += 1
                 step_count += 1
@@ -405,27 +404,10 @@ class FruitFlyRacer3D:
                     frame_count = 0
                     while self.viewer_running and self.simulation_running:
                         try:
-                            # Update scene
-                            self.renderer.update_scene(self.fly_model.data)
-
-                            # Set camera based on spectator mode
-                            if self.spectator_mode:
-                                cam_pos, cam_target = self.update_camera()
-                                self.renderer.cam.lookat[:] = cam_target
-                                self.renderer.cam.distance = np.linalg.norm(cam_pos - cam_target)
-                                direction = cam_pos - cam_target
-                                self.renderer.cam.azimuth = np.degrees(np.arctan2(direction[1], direction[0]))
-                                self.renderer.cam.elevation = np.degrees(np.arctan2(direction[2], np.sqrt(direction[0]**2 + direction[1]**2)))
-                            else:
-                                # Follow fly
-                                fly_pos = self.fly_model.get_position()
-                                cam_pos = fly_pos + np.array([0, -10, 5])
-                                cam_target = fly_pos
-                                direction = cam_pos - cam_target
-                                self.renderer.cam.lookat[:] = cam_target
-                                self.renderer.cam.distance = np.linalg.norm(direction)
-                                self.renderer.cam.azimuth = np.degrees(np.arctan2(direction[1], direction[0]))
-                                self.renderer.cam.elevation = np.degrees(np.arctan2(direction[2], np.sqrt(direction[0]**2 + direction[1]**2)))
+                            # Update scene with camera
+                            # Use "hero" camera for best view, or "track1" for tracking
+                            cam_name = 'hero' if not self.spectator_mode else 'track1'
+                            self.renderer.update_scene(self.fly_model.data, camera=cam_name)
 
                             # Render frame
                             frame = self.renderer.render()
@@ -434,7 +416,7 @@ class FruitFlyRacer3D:
                             # Debug: Log frame info every 30 frames
                             if frame_count % 30 == 0:
                                 self.log(f"Frame {frame_count}: shape={frame.shape}, dtype={frame.dtype}, min={frame.min()}, max={frame.max()}")
-                                self.log(f"Camera: pos={cam_pos}, target={cam_target}, distance={self.renderer.cam.distance}")
+                                self.log(f"Camera: {cam_name}")
                                 self.log(f"Fly position: {self.fly_model.get_position()}")
 
                             # Convert to PIL Image and display in Tkinter
