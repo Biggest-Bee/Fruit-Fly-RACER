@@ -28,7 +28,7 @@ Fruit Fly Racer is a Python-based simulation application featuring a virtual fru
   - Real-time status indicator
 - **Simulation Log:** Read-only log panel (cannot be edited)
 - **Static Obstacles:** Obstacles are fixed in 3D space, not animated
-- **Fly Movement:** Direct position control for racing (bypasses complex flybody physics)
+- **Fly Movement:** Hybrid approach using actuators + forward guidance
 - **Connectome Performance:** Limited to 1000 rows for real-time simulation
 
 ### 2. 3D Obstacle Tunnel Environment (`environment.py`)
@@ -75,7 +75,7 @@ Feed telemetry and environmental data into the fly's neural network:
 - **MaleCNS v1.0 Connectome Integration:** Loads and integrates with connectome weights (limited to 1000 rows for performance)
 - **Neural Control System:** Connects sensory inputs to motor outputs via connectome
 - **No Bazel Required:** Loads official flybody XML directly with MuJoCo
-- **Direct Position Control:** Racing uses direct position control for reliable movement
+- **Hybrid Movement:** Uses actuators for wing/leg movement + forward guidance force
 
 ### 7. Core Brain Simulation (`brain_sim/`)
 - **brain_engine.py:** Core brain simulation engine with optional connectome loading
@@ -90,8 +90,8 @@ Feed telemetry and environmental data into the fly's neural network:
 - **Automatic Checkpointing:** Saves progress every 100 simulations
 - **Best Tracking:** Records best score and best progress
 - **Wind Integration:** Wind direction sent to neural network inputs
-- **Direct Position Control:** Fly moves through tunnel using neural decisions
-- **Fly Movement:** Forward at max speed (5.0 m/s) with lateral/vertical adjustments
+- **Direct Position Control:** Fly moves through tunnel using neural decisions + forward guidance
+- **Fly Movement:** Forward at 80% max speed (4.0 m/s) with actuator control
 
 ## Project Structure
 
