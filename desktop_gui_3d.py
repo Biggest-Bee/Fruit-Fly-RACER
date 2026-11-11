@@ -550,6 +550,10 @@ class FruitFlyRacer3D:
                 # Step MuJoCo physics with flight force
                 self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
 
+                # Wind pushes the fly - gusts drift it off-line
+                if self.fly_model._fly_vel is not None:
+                    self.fly_model._fly_vel += wind * dt * 1.5
+
                 # Get updated position from physics
                 if self.fly_model.data is not None:
                     position = self.fly_model.get_position()

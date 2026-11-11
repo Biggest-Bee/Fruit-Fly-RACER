@@ -57,10 +57,17 @@ class RacingEnvironment:
 
     def reset(self):
         """Reset the environment to initial state"""
-        # Reset wind
-        self.wind_direction = np.array([1.0, 0.0, 0.0])
-        self.wind_base_speed = 0.5
-        self.wind_turbulence = 0.3
+        # Random wind per episode: mostly along the tunnel with a random
+        # lateral component, gentle base speed and turbulence
+        wind_angle = random.uniform(-0.5, 0.5)   # radians off tunnel axis
+        self.wind_direction = np.array([
+            math.cos(wind_angle),
+            random.uniform(-0.3, 0.3),            # slight vertical
+            math.sin(wind_angle) * random.uniform(-1, 1),  # lateral gusts
+        ])
+        self.wind_direction /= np.linalg.norm(self.wind_direction)
+        self.wind_base_speed = random.uniform(0.2, 0.8)   # m/s - gentle
+        self.wind_turbulence = random.uniform(0.1, 0.35)  # sigma
 
         # Reset physics state
         self.current_speed = 0.0
@@ -336,10 +343,14 @@ class RacingEnvironment:
         Args:
             time_step: Current simulation time
         """
-        # Add turbulence to wind
+        # Add turbulence to wind, then cap total wind speed so it never
+        # gets strong enough to overwhelm the fly (max ~1.5 m/s vs fly 4 m/s)
         turbulence = np.random.normal(0, self.wind_turbulence, 3)
         current_wind = self.wind_direction * (self.wind_base_speed + turbulence)
-        
+        wind_speed = np.linalg.norm(current_wind)
+        if wind_speed > 1.5:
+            current_wind *= 1.5 / wind_speed
+
         return current_wind
     
     # Approximate collision radii as fraction of obstacle size, per shape
