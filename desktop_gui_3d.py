@@ -806,6 +806,9 @@ class FruitFlyRacer3D:
         base_verts = []
         face_idx = []
         face_cols = []
+        wing_mask_parts = []
+        wing_pivot_parts = []
+        wing_side_parts = []
         max_r = 1e-6
         vbase = 0
         brown = np.array([0.42, 0.26, 0.15, 0.9])
@@ -836,27 +839,108 @@ class FruitFlyRacer3D:
             base_verts.append(bv)
             face_idx.append(tpl_faces + vbase)
             face_cols.append(np.tile(col, (n_tpl_faces, 1)))
-            vbase += len(tpl)
+
+            # wing geoms get a per-frame flap: pivot on the body centerline
+            # at the wing's x/y, rotating about the forward (X) axis
+            body_name = (mujoco.mj_id2name(
+                m, mujoco.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[i])) or '')
+            is_wing = 'wing' in body_name
+            n_v = len(bv)
+            wing_mask_parts.append(np.full(n_v, is_wing))
+            wing_pivot_parts.append(np.tile(
+                [off[0], off[1], 0.0], (n_v, 1)))
+            wing_side_parts.append(np.full(n_v, np.sign(off[2]) or 1.0))
+            vbase += n_v
             max_r = max(max_r, float(np.linalg.norm(off)) + float(np.max(semi)))
 
         self._fly_base_verts = np.vstack(base_verts)
         self._fly_faces_idx = np.vstack(face_idx)
         self._fly_facecolors = np.vstack(face_cols)
+        self._fly_wing_mask = np.concatenate(wing_mask_parts)
+        self._fly_wing_pivot = np.vstack(wing_pivot_parts)
+        self._fly_wing_side = np.concatenate(wing_side_parts)
         # real fly ~0.4 units -> ~0.45 m in the scene
         self._fly_vis_scale = 0.45 / (2.0 * max_r)
         self._fly_base_verts *= self._fly_vis_scale
+        self._fly_wing_pivot *= self._fly_vis_scale
         self._fly_render_ready = True
         print(f"Flybody renderer: {m.ngeom} geoms -> "
               f"{len(self._fly_faces_idx)} faces, scale={self._fly_vis_scale:.3f}")
 
-    def _draw_flybody(self, fly_pos):
-        """Draw the real flybody geoms as one merged Poly3DCollection."""
+    def _draw_flybody(self, fly_pos, fly_vel):
+        """Draw the real flybody geoms as one merged Poly3DCollection.
+
+        Per frame: wing geoms flap about the forward axis, then the whole
+        fly is rotated to face its velocity (yaw+pitch) and banked into
+        turns like a real fly.
+        """
         try:
             self._ensure_fly_render_data()
         except Exception as e:
             self.log(f"Flybody render init failed: {e}")
             return
-        V = self._fly_base_verts + np.asarray(fly_pos, dtype=np.float64)
+
+        now = time.monotonic()
+        dt = min(now - getattr(self, '_fly_anim_t', now), 0.1)
+        self._fly_anim_t = now
+
+        V = self._fly_base_verts.copy()
+
+        # --- wing flap: rotate wing verts about the forward (X) axis ---
+        # through a pivot on the body centerline; opposite signs per side
+        # so both wingtips beat upward together (~8 Hz)
+        wm = self._fly_wing_mask
+        if wm.any():
+            phase = 2.0 * np.pi * 8.0 * now
+            flap = 0.55 * np.sin(phase)          # ~0.55 rad stroke
+            theta = -self._fly_wing_side[wm] * flap
+            c, s = np.cos(theta), np.sin(theta)
+            rel = V[wm] - self._fly_wing_pivot[wm]
+            y_new = rel[:, 1] * c - rel[:, 2] * s
+            z_new = rel[:, 1] * s + rel[:, 2] * c
+            V[wm, 1] = y_new + self._fly_wing_pivot[wm][:, 1]
+            V[wm, 2] = z_new + self._fly_wing_pivot[wm][:, 2]
+
+        # --- orientation: face velocity, pitch with it, bank into turns ---
+        speed = float(np.linalg.norm(fly_vel))
+        if speed > 0.3:
+            f = fly_vel / speed                     # fly forward axis
+            # keep a stable heading when nearly vertical
+            if abs(f[1]) > 0.95:
+                f = np.array([f[0], 0.05 * np.sign(f[1]) or 1.0, f[2]])
+                f /= np.linalg.norm(f)
+            world_up = np.array([0.0, 1.0, 0.0])
+            r = np.cross(f, world_up)               # lateral (right) axis
+            rn = np.linalg.norm(r)
+            if rn < 1e-6:
+                r = np.array([0.0, 0.0, 1.0])
+            else:
+                r /= rn
+            u = np.cross(r, f)                      # dorsal axis
+            u /= np.linalg.norm(u)
+
+            # bank: roll about forward axis proportional to yaw rate
+            heading = np.arctan2(f[2], f[0])
+            prev = getattr(self, '_fly_heading', heading)
+            dyaw = (heading - prev + np.pi) % (2 * np.pi) - np.pi
+            self._fly_heading = heading
+            yaw_rate = dyaw / max(dt, 1e-3)
+            bank_t = float(np.clip(yaw_rate * 0.35, -0.6, 0.6))
+            bank = getattr(self, '_fly_bank', 0.0)
+            bank += (bank_t - bank) * min(1.0, dt * 8.0)
+            self._fly_bank = bank
+            cb, sb = np.cos(bank), np.sin(bank)
+            # rotate u,r about f: u' = u*cb + (f x u)*sb ; f x u = r
+            u2 = u * cb + r * sb
+            r2 = r * cb - u * sb
+
+            # R columns = fly axes expressed in world coords;
+            # row-vector verts: V @ R (since R maps local->world, use R.T)
+            R = np.column_stack([f, u2, r2])
+            V = V @ R.T
+        # else: keep last orientation (identity on first frames)
+
+        V += np.asarray(fly_pos, dtype=np.float64)
         polys = V[self._fly_faces_idx]
         coll = Poly3DCollection(polys, facecolors=self._fly_facecolors,
                                 alpha=0.9, edgecolor='none')
@@ -1008,7 +1092,8 @@ class FruitFlyRacer3D:
 
         # Set initial view angle only once - camera modes manage view afterwards
         if not getattr(self, '_view_initialized', False):
-            self.ax.view_init(elev=20, azim=0)
+            # roll=90 puts world +y (up) on screen top
+            self.ax.view_init(elev=20, azim=0, roll=90)
 
         self.canvas.draw()
 
@@ -1054,22 +1139,26 @@ class FruitFlyRacer3D:
             self.ax.set_ylim(center[1] - half_yz, center[1] + half_yz)
             self.ax.set_zlim(center[2] - half_yz, center[2] + half_yz)
             if not getattr(self, '_view_initialized', False):
-                self.ax.view_init(elev=10, azim=0)
+                # roll=90 puts world +y (up) on screen top
+                self.ax.view_init(elev=10, azim=0, roll=90)
                 self._view_initialized = True
         else:
-            # Auto-follow (chase cam): center view on fly
-            half_x = 20.0 * zoom
-            half_yz = tunnel_radius * zoom
-            self.ax.set_xlim(fly_pos[0] - half_x, fly_pos[0] + half_x)
-            self.ax.set_ylim(-half_yz, half_yz)
-            self.ax.set_zlim(-half_yz, half_yz)
+            # Chase cam: camera behind and above the fly's torso, looking
+            # down-tunnel. Window biased ahead of the fly so the course
+            # fills the view; centered on the fly vertically/laterally.
+            self.ax.set_xlim(fly_pos[0] - 6.0 * zoom, fly_pos[0] + 34.0 * zoom)
+            self.ax.set_ylim(fly_pos[1] - tunnel_radius * zoom,
+                             fly_pos[1] + tunnel_radius * zoom)
+            self.ax.set_zlim(fly_pos[2] - tunnel_radius * zoom,
+                             fly_pos[2] + tunnel_radius * zoom)
             if not getattr(self, '_view_initialized', False):
-                self.ax.view_init(elev=10, azim=0)
+                # elev tilts camera above the fly; roll=90 keeps +y up
+                self.ax.view_init(elev=18, azim=0, roll=90)
                 self._view_initialized = True
 
         # Draw the real official flybody model (all geoms: body, eyes,
         # antennae, legs, wings) instead of a proxy shape
-        self._draw_flybody(fly_pos)
+        self._draw_flybody(fly_pos, fly_vel)
 
         # Draw velocity vector (direction of flight)
         if np.linalg.norm(fly_vel) > 0.1:
@@ -1177,7 +1266,9 @@ class FruitFlyRacer3D:
         new_elev = np.clip(elev + dy * 0.5, -90, 90)
         new_azim = azim - dx * 0.5
 
-        self.ax.view_init(elev=new_elev, azim=new_azim)
+        # preserve roll so +y stays screen-up (fly doesn't go sideways)
+        kw = {'roll': self.ax.roll} if hasattr(self.ax, 'roll') else {}
+        self.ax.view_init(elev=new_elev, azim=new_azim, **kw)
         self._user_moved_camera = True
 
         self._last_x = event.x
