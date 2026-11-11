@@ -45,6 +45,7 @@ class FruitFlyRacer3D:
         # Simulation state
         self.simulation_running = False
         self.simulation_paused = False
+        self._restart_episode = False
         self.simulation_thread = None
         self.current_simulation = 0
         self.num_simulations = 1000000
@@ -180,6 +181,9 @@ class FruitFlyRacer3D:
         self.pause_btn = ttk.Button(left_frame, text="Pause Simulation", command=self.pause_simulation, state=tk.DISABLED)
         self.pause_btn.pack(fill=tk.X, pady=5)
 
+        self.restart_btn = ttk.Button(left_frame, text="Restart Episode", command=self.restart_episode, state=tk.DISABLED)
+        self.restart_btn.pack(fill=tk.X, pady=5)
+
         # Camera view mode: Chase Cam / Fly POV / Spectator
         self.camera_view = "chase"  # 'chase', 'flypov', 'spectator'
         ttk.Label(left_frame, text="Camera View:").pack(anchor=tk.W, pady=5)
@@ -301,6 +305,7 @@ class FruitFlyRacer3D:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.pause_btn.config(state=tk.NORMAL, text="Pause Simulation")
+        self.restart_btn.config(state=tk.NORMAL)
         self.status_label.config(text="Running", foreground="green")
         
         self.log(f"Starting simulation: {self.num_simulations} runs")
@@ -317,8 +322,14 @@ class FruitFlyRacer3D:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED)
+        self.restart_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Stopped", foreground="orange")
         self.log("Simulation stopped by user")
+
+    def restart_episode(self):
+        """Restart the current episode: fly returns to start line"""
+        self._restart_episode = True
+        self.log(">>> Restarting episode - fly back to start line")
 
     def pause_simulation(self):
         """Pause/resume the simulation - camera controls stay active while paused"""
@@ -410,6 +421,11 @@ class FruitFlyRacer3D:
                 result = self.run_single_episode()
                 episode_time = time.time() - episode_start
 
+                # User restarted: partial run doesn't count toward scores,
+                # gain adaptation, or checkpoints - just fly again
+                if result.get('restart'):
+                    continue
+
                 # Update best scores
                 if result['score'] > self.best_score:
                     self.best_score = result['score']
@@ -482,12 +498,21 @@ class FruitFlyRacer3D:
             step_count = 0
             dt = 0.02
             finish_reached = False
+            restarted = False
 
             while self.simulation_running:
                 # Handle pause - wait while paused but keep GUI responsive
                 while self.simulation_paused and self.simulation_running:
                     time.sleep(0.05)
                 if not self.simulation_running:
+                    break
+
+                # User pressed Restart Episode - bail out; the outer loop
+                # starts a fresh episode (fly back to start line)
+                if getattr(self, '_restart_episode', False):
+                    self._restart_episode = False
+                    restarted = True
+                    self.log(">>> Episode restarted - resetting fly")
                     break
 
                 step += 1
@@ -598,7 +623,8 @@ class FruitFlyRacer3D:
                 'score': self.rewards.total_points,
                 'progress': self.rewards.best_progress,
                 'collisions': self.rewards.collision_count,
-                'finish_reached': finish_reached
+                'finish_reached': finish_reached,
+                'restart': restarted
             }
 
         except Exception as e:
@@ -1094,8 +1120,8 @@ class FruitFlyRacer3D:
         # Set initial view angle only once - camera modes manage view afterwards
         if not getattr(self, '_view_initialized', False):
             # vertical_axis='y': elev = height above fly, azim orbits about
-            # the up axis; azim=180 puts the camera behind the fly (+x fwd)
-            self.ax.view_init(elev=20, azim=180, vertical_axis='y')
+            # the up axis; azim=270 puts the camera behind the fly (+x fwd)
+            self.ax.view_init(elev=20, azim=270, vertical_axis='y')
 
         self.canvas.draw()
 
@@ -1130,7 +1156,7 @@ class FruitFlyRacer3D:
             self.ax.set_zlim(center[2] - tunnel_radius * 0.95 * zoom, center[2] + tunnel_radius * 0.95 * zoom)
             if not getattr(self, '_view_initialized', False):
                 # eye-level behind the fly, looking down-tunnel (+x)
-                self.ax.view_init(elev=2, azim=180, vertical_axis='y')
+                self.ax.view_init(elev=2, azim=270, vertical_axis='y')
                 self._view_initialized = True
         elif user_control:
             # User controls camera: center on fly + manual pan offset, keep user zoom/rotation
@@ -1141,18 +1167,18 @@ class FruitFlyRacer3D:
             self.ax.set_ylim(center[1] - half_yz, center[1] + half_yz)
             self.ax.set_zlim(center[2] - half_yz, center[2] + half_yz)
             if not getattr(self, '_view_initialized', False):
-                self.ax.view_init(elev=15, azim=180, vertical_axis='y')
+                self.ax.view_init(elev=15, azim=270, vertical_axis='y')
                 self._view_initialized = True
         else:
             # Chase cam: tight window just behind/above the fly's torso,
             # biased ahead so obstacles come into view. Camera yaw/pitch is
             # fixed - it does NOT follow the fly's bank angle.
-            self.ax.set_xlim(fly_pos[0] - 4.0 * zoom, fly_pos[0] + 16.0 * zoom)
-            self.ax.set_ylim(fly_pos[1] - 5.0 * zoom, fly_pos[1] + 5.0 * zoom)
-            self.ax.set_zlim(fly_pos[2] - 5.0 * zoom, fly_pos[2] + 5.0 * zoom)
+            self.ax.set_xlim(fly_pos[0] - 2.5 * zoom, fly_pos[0] + 11.5 * zoom)
+            self.ax.set_ylim(fly_pos[1] - 3.5 * zoom, fly_pos[1] + 3.5 * zoom)
+            self.ax.set_zlim(fly_pos[2] - 3.5 * zoom, fly_pos[2] + 3.5 * zoom)
             if not getattr(self, '_view_initialized', False):
-                # elev=20: camera above the torso, behind the fly
-                self.ax.view_init(elev=20, azim=180, vertical_axis='y')
+                # elev=25: camera above the torso, behind the fly
+                self.ax.view_init(elev=25, azim=270, vertical_axis='y')
                 self._view_initialized = True
 
         # Draw the real official flybody model (all geoms: body, eyes,
@@ -1421,6 +1447,7 @@ class FruitFlyRacer3D:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
+        self.restart_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Complete", foreground="blue")
         self.log(f"Simulation complete! Total: {self.current_simulation}")
         self.log(f"Best Score: {self.best_score}")
@@ -1433,6 +1460,7 @@ class FruitFlyRacer3D:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
+        self.restart_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Error", foreground="red")
         self.log("Simulation error occurred")
     
