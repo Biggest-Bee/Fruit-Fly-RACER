@@ -165,16 +165,23 @@ class RacingEnvironment:
                     # Random size - bigger obstacles
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
 
-                    # Decide hole first: holed obstacles spawn near the
-                    # tunnel center so the hole is actually reachable
+                    # Decide hole first: holed obstacles are biased toward
+                    # the center band but never dead-center - obstacles at
+                    # the direct center are always solid and holeless
                     has_hole = with_holes and random.random() < 0.5
 
                     # Generate normally at a random position in the tunnel
                     angle = random.uniform(0, 2 * math.pi)
                     if has_hole:
-                        radial = random.uniform(0, self.tunnel_radius * 0.35)
+                        # near-center band (5%-60% of radius), not dead center
+                        radial = self.tunnel_radius * random.uniform(0.05, 0.6)
                     else:
                         radial = random.uniform(0, self.tunnel_radius * 0.85)
+
+                    # Direct-center obstacles must be solid - no hole dead
+                    # ahead of the fly
+                    if radial < 1.0:
+                        has_hole = False
 
                     # If the obstacle's extent touches the tunnel wall, it
                     # becomes wall-mounted: snap it so it merges into the wall
@@ -318,10 +325,10 @@ class RacingEnvironment:
         <geom name="obstacle" type="cylinder" pos="{x} {y} {z}" size="{size} {size*2} {size}" euler="0 0 {rot}" rgba="0.8 0.4 0.4 0.8"/>
 """
         
-        # Add hole if applicable
+        # Add hole if applicable (centered on the obstacle)
         if obstacle['has_hole']:
             hole_size = obstacle['hole_size']
-            hole_z = z + hole_size * 0.5
+            hole_z = z
             mjcf += f"""
         <geom name="hole" type="sphere" pos="{x} {y} {hole_z}" size="{hole_size}" rgba="0.0 0.0 0.0 0.0"/>
 """
@@ -389,6 +396,10 @@ class RacingEnvironment:
             dist = np.linalg.norm(d)
             radius = self.collision_radius(obs)
             if dist < radius:
+                # Holed obstacle: the hole is centered on the obstacle -
+                # inside it the fly passes through untouched
+                if obs.get('has_hole') and dist < obs.get('hole_size', 0.0):
+                    continue
                 if dist > 1e-6:
                     pos = obs_pos + d / dist * radius
                 else:
@@ -466,10 +477,9 @@ class RacingEnvironment:
             distance = np.linalg.norm(position - obs_pos)
             if distance < self.collision_radius(obs):
 
-                # Check if hole (pass through) - hole offset along lateral axis
+                # Check if hole (pass through) - hole centered on obstacle
                 if obstacle['has_hole']:
-                    hole_pos = obs_pos + np.array([0.0, 0.0, obstacle['hole_size'] * 0.5])
-                    if np.linalg.norm(position - hole_pos) < obstacle['hole_size']:
+                    if np.linalg.norm(position - obs_pos) < obstacle['hole_size']:
                         return False  # Pass through hole
                 else:
                     return True  # Collision
