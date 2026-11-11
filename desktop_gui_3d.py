@@ -1196,9 +1196,9 @@ class FruitFlyRacer3D:
         # Zoom-level indicator (top-right corner) - temporary debug aid to
         # correlate the obstacle color-flash artifact with zoom distance
         if not hasattr(self, '_zoom_text'):
-            self._zoom_text = self.ax.text(
-                0.98, 0.95, '', transform=self.ax.transAxes,
-                ha='right', va='top', fontsize=9, color='white',
+            self._zoom_text = self.fig.text(
+                0.98, 0.95, '', ha='right', va='top', fontsize=9,
+                color='white',
                 bbox=dict(facecolor='black', alpha=0.5, pad=2))
         win_x = 14.0 * zoom
         win_yz = 7.0 * zoom
