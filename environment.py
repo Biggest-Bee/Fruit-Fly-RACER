@@ -148,16 +148,21 @@ class RacingEnvironment:
                     # Random obstacle type
                     obs_type = random.choice(self.obstacle_types)
 
-                    # Random position within tunnel cross-section - ensure inside cylinder
-                    # position = [x=tunnel direction, y=vertical, z=lateral]
-                    angle = random.uniform(0, 2 * math.pi)
-                    # Keep obstacle centers well inside tunnel radius
-                    radius = random.uniform(0, self.tunnel_radius * 0.4)
-                    lateral = radius * math.cos(angle)   # -> position[2]
-                    vertical = radius * math.sin(angle)  # -> position[1]
-
                     # Random size - bigger obstacles
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
+
+                    # ~30% of obstacles merge with / embed into the tunnel wall
+                    wall_mounted = random.random() < 0.3
+                    angle = random.uniform(0, 2 * math.pi)
+                    if wall_mounted:
+                        # Center close to wall so obstacle protrudes inward and
+                        # its outer edge sinks into the cylinder wall
+                        radial = self.tunnel_radius - size * random.uniform(0.3, 0.5)
+                    else:
+                        # Freestanding obstacle well inside the tunnel
+                        radial = random.uniform(0, self.tunnel_radius * 0.4)
+                    lateral = radial * math.cos(angle)   # -> position[2]
+                    vertical = radial * math.sin(angle)  # -> position[1]
 
                     # Generate obstacle - position stored as [tunnel_x, vertical_y, lateral_z]
                     obstacle = {
@@ -166,7 +171,8 @@ class RacingEnvironment:
                         'size': size,
                         'rotation': random.uniform(0, 2 * math.pi),
                         'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
-                        'hole_size': random.uniform(0.1, 0.3) if with_holes else 0.0  # smaller holes
+                        'hole_size': random.uniform(0.1, 0.3) if with_holes else 0.0,  # smaller holes
+                        'wall_mounted': wall_mounted
                     }
 
                     # Validate obstacle

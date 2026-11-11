@@ -576,6 +576,21 @@ class FruitFlyRacer3D:
                                 edgecolor='black', linewidth=0.4)
         self.ax.add_collection3d(coll)
 
+    def _draw_cap_fan(self, center, rim_yz, color):
+        """Draw a filled circular cap as a triangle fan.
+        center: (3,) array, rim_yz: (N,2) array of (y,z) rim points."""
+        n = len(rim_yz)
+        c = np.asarray(center, dtype=float)
+        polys = []
+        for i in range(n):
+            j = (i + 1) % n
+            p1 = np.array([c[0], rim_yz[i, 0], rim_yz[i, 1]])
+            p2 = np.array([c[0], rim_yz[j, 0], rim_yz[j, 1]])
+            polys.append([c, p1, p2])
+        coll = Poly3DCollection(polys, alpha=1.0, facecolor=color,
+                                edgecolor='none')
+        self.ax.add_collection3d(coll)
+
     def draw_tunnel(self):
         """Draw the tunnel in 3D - horizontal cylinder along X-axis"""
         # Clear previous tunnel
@@ -602,25 +617,33 @@ class FruitFlyRacer3D:
         # Draw cylinder walls (opaque - enclosed)
         self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=1.0, color='blue', edgecolor='none')
 
+        # Inner wall layer (reversed winding -> normals point inward) so the
+        # tunnel interior is properly shaded when camera is inside
+        theta_in = np.linspace(2*np.pi, 0, 100)
+        theta_grid_in, x_grid_in = np.meshgrid(theta_in, x)
+        r_in = tunnel_radius * 0.99
+        y_grid_in = r_in * np.cos(theta_grid_in)
+        z_grid_in = r_in * np.sin(theta_grid_in)
+        self.ax.plot_surface(x_grid_in, y_grid_in, z_grid_in, alpha=1.0, color='steelblue', edgecolor='none')
+
         # Draw tunnel end caps (start and finish) - enclosed
-        # Start cap (X = -tunnel_length/2)
-        theta_cap = np.linspace(0, 2*np.pi, 50)
+        # Start cap ring (X = -tunnel_length/2)
+        theta_cap = np.linspace(0, 2*np.pi, 60)
         y_cap = tunnel_radius * np.cos(theta_cap)
         z_cap = tunnel_radius * np.sin(theta_cap)
         x_cap = np.full_like(theta_cap, -tunnel_length/2)
         self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=3, label='Start')
 
-        # Finish cap (X = +tunnel_length/2)
+        # Finish cap ring (X = +tunnel_length/2)
         x_cap_finish = np.full_like(theta_cap, tunnel_length/2)
         self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=3, label='Finish')
 
-        # Draw end caps as filled circles (enclosed tunnel)
-        # Start cap
-        self.ax.plot_surface(x_cap.reshape(1, -1), y_cap.reshape(1, -1), z_cap.reshape(1, -1),
-                           alpha=1.0, color='darkblue')
-        # Finish cap
-        self.ax.plot_surface(x_cap_finish.reshape(1, -1), y_cap.reshape(1, -1), z_cap.reshape(1, -1),
-                           alpha=1.0, color='darkblue')
+        # Filled end caps as triangle fans (proper enclosed tunnel - no see-through)
+        center_start = np.array([-tunnel_length/2, 0.0, 0.0])
+        center_finish = np.array([tunnel_length/2, 0.0, 0.0])
+        rim = np.stack([y_cap, z_cap], axis=1)  # (N,2) y,z pairs
+        self._draw_cap_fan(center_start, rim, 'darkgreen')
+        self._draw_cap_fan(center_finish, rim, 'darkgreen')
 
         # Draw obstacles - position is already [x=tunnel, y=vertical, z=lateral]
         obstacle_count = 0
@@ -746,11 +769,11 @@ class FruitFlyRacer3D:
 
         if camera_view == 'flypov' and not self.spectator_mode:
             # Fly POV: first-person view from the fly looking down the tunnel (+x)
-            # Camera sits at the fly; tight window shows tunnel ahead
+            # Camera sits at the fly; window wide enough to see tunnel walls
             center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
             self.ax.set_xlim(center[0] - 2.0 * zoom, center[0] + 40.0 * zoom)
-            self.ax.set_ylim(center[1] - 5.0 * zoom, center[1] + 5.0 * zoom)
-            self.ax.set_zlim(center[2] - 5.0 * zoom, center[2] + 5.0 * zoom)
+            self.ax.set_ylim(center[1] - tunnel_radius * 0.95 * zoom, center[1] + tunnel_radius * 0.95 * zoom)
+            self.ax.set_zlim(center[2] - tunnel_radius * 0.95 * zoom, center[2] + tunnel_radius * 0.95 * zoom)
             if not getattr(self, '_view_initialized', False):
                 # elev=0, azim=0 looks along +x; roll=90 puts world +y (up) on screen top
                 self.ax.view_init(elev=0, azim=0, roll=90)
