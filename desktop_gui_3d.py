@@ -1243,10 +1243,11 @@ class FruitFlyRacer3D:
             self.root.after(33, self.render_frame)
 
         except Exception as e:
+            # Don't kill the render loop on a transient frame error -
+            # log it and keep rendering or the view freezes completely
             self.log(f"Render error: {e}")
             import traceback
             traceback.print_exc()
-            self.viewer_running = False
 
     def update_canvas(self, img_tk):
         """Update Tkinter canvas with rendered frame"""
@@ -1278,7 +1279,14 @@ class FruitFlyRacer3D:
         if not hasattr(self, '_zoom_factor'):
             self._zoom_factor = 1.0
 
-        if event.step > 0:
+        # event.step is +1 (up) / -1 (down); fall back to button name for
+        # backends that don't populate it
+        step = getattr(event, 'step', 0) or 0
+        if step == 0:
+            btn = getattr(event, 'button', '')
+            step = 1 if btn in ('up', 'scroll_up', 1) else -1
+
+        if step > 0:
             self._zoom_factor /= 1.15  # zoom in
         else:
             self._zoom_factor *= 1.15  # zoom out
@@ -1287,8 +1295,8 @@ class FruitFlyRacer3D:
         max_zoom_out = max(tunnel_length / 40.0, tunnel_radius / 10.0)
         self._zoom_factor = float(np.clip(self._zoom_factor, 0.08, max_zoom_out))
 
-        # Mark that user took camera control so follow-mode doesn't fight us
-        self._user_moved_camera = True
+        # NOTE: don't set _user_moved_camera here - scrolling should zoom
+        # without kicking the user out of chase-cam mode
         self.canvas.draw_idle()
 
     def on_mouse_press(self, event):
