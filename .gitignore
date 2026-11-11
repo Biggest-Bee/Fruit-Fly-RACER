@@ -49,6 +49,9 @@ Thumbs.db
 # Agent memory
 agent_memory.md
 
+# Windows null-device artifact from bash redirects
+nul
+
 # Large connectome reservoir caches (regenerable, >1GB)
 fly_reservoir.npz
 fly_cns_reservoir.npz
