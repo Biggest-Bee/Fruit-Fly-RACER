@@ -18,6 +18,7 @@ matplotlib.use('TkAgg')
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # Import our modules
 from environment import RacingEnvironment
@@ -137,14 +138,24 @@ class FruitFlyRacer3D:
         self.pause_btn = ttk.Button(left_frame, text="Pause Simulation", command=self.pause_simulation, state=tk.DISABLED)
         self.pause_btn.pack(fill=tk.X, pady=5)
 
-        # Spectator mode toggle
+        # Camera view mode: Chase Cam / Fly POV / Spectator
+        self.camera_view = "chase"  # 'chase', 'flypov', 'spectator'
+        ttk.Label(left_frame, text="Camera View:").pack(anchor=tk.W, pady=5)
+        self.view_mode_var = tk.StringVar(value="Chase Cam")
+        view_combo = ttk.Combobox(left_frame, textvariable=self.view_mode_var,
+                                  values=["Chase Cam", "Fly POV", "Spectator"],
+                                  state="readonly", width=12)
+        view_combo.pack(anchor=tk.W, pady=5)
+        view_combo.bind('<<ComboboxSelected>>', self.on_view_mode_change)
+
+        # Spectator mode (synced with combobox)
         self.spectator_var = tk.BooleanVar(value=False)
         spectator_check = ttk.Checkbutton(left_frame, text="Spectator Mode", variable=self.spectator_var,
                                          command=self.toggle_spectator_mode)
         spectator_check.pack(fill=tk.X, pady=5)
 
         # Camera controls hint
-        ttk.Label(left_frame, text="Camera: WASD to move, Mouse to look", 
+        ttk.Label(left_frame, text="Camera: drag=rotate, wheel=zoom, WASD=move", 
                  font=("Arial", 8), foreground="gray").pack(anchor=tk.W, pady=2)
 
         # Status panel
@@ -238,6 +249,8 @@ class FruitFlyRacer3D:
         self.best_progress = 0.0
 
         # Reset camera state
+        self.camera_view = "chase"
+        self.view_mode_var.set("Chase Cam")
         self._user_moved_camera = False
         self._zoom_factor = 1.0
         self._cam_offset = np.array([0.0, 0.0, 0.0])
@@ -526,6 +539,43 @@ class FruitFlyRacer3D:
             import traceback
             traceback.print_exc()
 
+    # Face indices for a cuboid with 8 vertices (see _cuboid_verts ordering:
+    # sx outer, sy middle, sz inner -> v0=(-,-,-) ... v7=(+,+,+))
+    _CUBOID_FACES = [
+        [0, 2, 6, 4],  # z-min face
+        [1, 3, 7, 5],  # z-max face
+        [0, 1, 5, 4],  # y-min face
+        [2, 3, 7, 6],  # y-max face
+        [0, 1, 3, 2],  # x-min face
+        [4, 5, 7, 6],  # x-max face
+    ]
+
+    @staticmethod
+    def _rot_yz(dy, dz, angle):
+        """Rotate an offset in the Y-Z cross-section plane (around tunnel X-axis)"""
+        c, s = np.cos(angle), np.sin(angle)
+        return dy * c - dz * s, dy * s + dz * c
+
+    def _cuboid_verts(self, center, hx, hy, hz, rot=0.0):
+        """Generate 8 vertices of a box centered at `center` with half-extents"""
+        cx, cy, cz = center
+        verts = []
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                for sz in (-1, 1):
+                    dy = sy * hy
+                    dz = sz * hz
+                    ry, rz = self._rot_yz(dy, dz, rot)
+                    verts.append([cx + sx * hx, cy + ry, cz + rz])
+        return np.array(verts)
+
+    def _draw_polyhedron(self, verts, faces, color):
+        """Draw a solid 3D polyhedron from vertices and face index lists"""
+        polys = [[verts[i] for i in face] for face in faces]
+        coll = Poly3DCollection(polys, alpha=1.0, facecolor=color,
+                                edgecolor='black', linewidth=0.4)
+        self.ax.add_collection3d(coll)
+
     def draw_tunnel(self):
         """Draw the tunnel in 3D - horizontal cylinder along X-axis"""
         # Clear previous tunnel
@@ -584,119 +634,70 @@ class FruitFlyRacer3D:
             if i < 5:
                 self.log(f"Drawing obstacle {i}: type={obs_type}, pos={obs['position']}, converted={pos}, size={size}")
 
-            # Draw obstacle based on type
+            # Draw obstacle based on type - all solid 3D shapes
+            rot = obs.get('rotation', 0.0)
+
             if obs_type == 'sphere':
-                # Draw sphere (opaque)
-                u = np.linspace(0, 2 * np.pi, 20)
-                v = np.linspace(0, np.pi, 20)
+                # Circle -> big 3D sphere
+                u = np.linspace(0, 2 * np.pi, 24)
+                v = np.linspace(0, np.pi, 24)
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
                 self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='red')
 
             elif obs_type == 'box':
-                # Draw box
-                x_min, x_max = pos[0] - size/2, pos[0] + size/2
-                y_min, y_max = pos[1] - size/2, pos[1] + size/2
-                z_min, z_max = pos[2] - size/2, pos[2] + size/2
-
-                # Draw box edges
-                edges = [
-                    [(x_min, y_min, z_min), (x_max, y_min, z_min)],
-                    [(x_max, y_min, z_min), (x_max, y_max, z_min)],
-                    [(x_max, y_max, z_min), (x_min, y_max, z_min)],
-                    [(x_min, y_max, z_min), (x_min, y_min, z_min)],
-                    [(x_min, y_min, z_max), (x_max, y_min, z_max)],
-                    [(x_max, y_min, z_max), (x_max, y_max, z_max)],
-                    [(x_max, y_max, z_max), (x_min, y_max, z_max)],
-                    [(x_min, y_max, z_max), (x_min, y_min, z_max)],
-                    [(x_min, y_min, z_min), (x_min, y_min, z_max)],
-                    [(x_max, y_min, z_min), (x_max, y_min, z_max)],
-                    [(x_max, y_max, z_min), (x_max, y_max, z_max)],
-                    [(x_min, y_max, z_min), (x_min, y_max, z_max)]
-                ]
-
-                for edge in edges:
-                    self.ax.plot([edge[0][0], edge[1][0]], [edge[0][1], edge[1][1]],
-                               [edge[0][2], edge[1][2]], color='red', linewidth=2)
+                # Rectangle -> solid 3D rectangular box (flat cuboid)
+                hx, hy, hz = size / 2, size * 0.3, size * 0.6
+                verts = self._cuboid_verts(pos, hx, hy, hz, rot)
+                self._draw_polyhedron(verts, self._CUBOID_FACES, 'orange')
 
             elif obs_type == 'cylinder':
-                # Draw cylinder obstacle (along X-axis)
-                theta_obs = np.linspace(0, 2*np.pi, 20)
-                x_obs_cyl = np.linspace(pos[0] - size/2, pos[0] + size/2, 10)
+                # 3D cylinder along tunnel X-axis
+                theta_obs = np.linspace(0, 2*np.pi, 24)
+                x_obs_cyl = np.linspace(pos[0] - size/2, pos[0] + size/2, 12)
                 theta_grid_obs, x_grid_obs_cyl = np.meshgrid(theta_obs, x_obs_cyl)
                 y_grid_obs = pos[1] + size/2 * np.cos(theta_grid_obs)
                 z_grid_obs = pos[2] + size/2 * np.sin(theta_grid_obs)
-                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='orange')
+                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='lime')
 
             elif obs_type == 'cube':
-                # Draw cube obstacle (3D) - simplified as box
-                x_min, x_max = pos[0] - size/2, pos[0] + size/2
-                y_min, y_max = pos[1] - size/2, pos[1] + size/2
-                z_min, z_max = pos[2] - size/2, pos[2] + size/2
-
-                # Draw cube as 6 faces using plot_surface with proper arrays
-                # Front face
-                x_front = np.array([[x_min, x_max], [x_min, x_max]])
-                y_front = np.array([[y_min, y_min], [y_max, y_max]])
-                z_front = np.array([[z_min, z_min], [z_min, z_min]])
-                self.ax.plot_surface(x_front, y_front, z_front, alpha=1.0, color='cyan')
-
-                # Back face
-                z_back = np.array([[z_max, z_max], [z_max, z_max]])
-                self.ax.plot_surface(x_front, y_front, z_back, alpha=1.0, color='cyan')
-
-                # Top face
-                y_top = np.array([[y_max, y_max], [y_max, y_max]])
-                z_top = np.array([[z_min, z_max], [z_min, z_max]])
-                self.ax.plot_surface(x_front, y_top, z_top, alpha=1.0, color='cyan')
-
-                # Bottom face
-                y_bottom = np.array([[y_min, y_min], [y_min, y_min]])
-                self.ax.plot_surface(x_front, y_bottom, z_top, alpha=1.0, color='cyan')
-
-                # Left face
-                x_left = np.array([[x_min, x_min], [x_min, x_min]])
-                self.ax.plot_surface(x_left, y_front, z_top, alpha=1.0, color='cyan')
-
-                # Right face
-                x_right = np.array([[x_max, x_max], [x_max, x_max]])
-                self.ax.plot_surface(x_right, y_front, z_top, alpha=1.0, color='cyan')
+                # Square -> solid 3D cube
+                h = size / 2
+                verts = self._cuboid_verts(pos, h, h, h, rot)
+                self._draw_polyhedron(verts, self._CUBOID_FACES, 'cyan')
 
             elif obs_type == 'pyramid':
-                # Draw pyramid obstacle (3D)
-                # Base square
-                base_size = size
-                apex_height = size * 1.5
-
-                # Base corners
-                x1, x2 = pos[0] - base_size/2, pos[0] + base_size/2
-                y1, y2 = pos[1] - base_size/2, pos[1] + base_size/2
-                z_base = pos[2] - size/2
-                z_apex = pos[2] + apex_height
-
-                # Draw pyramid faces
-                # Front triangular face
-                self.ax.plot_surface([[x1, x2], [x1, x2]],
-                                   [[y1, y1], [y2, y2]],
-                                   [[z_base, z_base], [z_base, z_base]],
-                                   alpha=1.0, color='magenta')
-                # This is simplified - in production we'd draw proper pyramid faces
+                # Triangle -> solid 3D pyramid (square base, apex on top)
+                h = size / 2
+                y_base = pos[1] - h
+                base_center = np.array([pos[0], y_base, pos[2]])
+                corners = []
+                for dy, dz in [(-h, -h), (-h, h), (h, h), (h, -h)]:
+                    ry, rz = self._rot_yz(dy, dz, rot)
+                    corners.append(base_center + np.array([0.0, ry, rz]))
+                apex = np.array([pos[0], pos[1] + size * 1.2, pos[2]])
+                verts = np.array(corners + [apex])
+                faces = [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]]
+                self._draw_polyhedron(verts, faces, 'magenta')
 
             elif obs_type == 'tetrahedron':
-                # Draw tetrahedron obstacle (3D)
-                # Simplified as small sphere for now
-                u = np.linspace(0, 2 * np.pi, 20)
-                v = np.linspace(0, np.pi, 20)
-                x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
-                y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
-                z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='yellow')
+                # Triangle -> solid 3D tetrahedron (4 triangular faces)
+                h = size / 2
+                base_center = np.array([pos[0], pos[1] - h * 0.6, pos[2]])
+                base = []
+                for dy, dz in [(-h * 0.5, -h), (h * 0.5, -h), (0.0, h)]:
+                    ry, rz = self._rot_yz(dy, dz, rot)
+                    base.append(base_center + np.array([0.0, ry, rz]))
+                v0 = np.array([pos[0], pos[1] + h, pos[2]])
+                verts = np.array([v0] + base)
+                faces = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]]
+                self._draw_polyhedron(verts, faces, 'yellow')
 
             else:
-                # Default to sphere for unknown types
-                u = np.linspace(0, 2 * np.pi, 20)
-                v = np.linspace(0, np.pi, 20)
+                # Fallback: big sphere
+                u = np.linspace(0, 2 * np.pi, 24)
+                v = np.linspace(0, np.pi, 24)
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
@@ -715,8 +716,9 @@ class FruitFlyRacer3D:
         self.ax.set_zlabel('Z (m) - Horizontal')
         self.ax.set_title('Fruit Fly Racer - Horizontal Tunnel View')
 
-        # Set initial view angle for horizontal tunnel
-        self.ax.view_init(elev=20, azim=0)  # Side view of horizontal tunnel
+        # Set initial view angle only once - camera modes manage view afterwards
+        if not getattr(self, '_view_initialized', False):
+            self.ax.view_init(elev=20, azim=0)
 
         self.canvas.draw()
 
@@ -739,11 +741,23 @@ class FruitFlyRacer3D:
         tunnel_radius = self.environment.tunnel_radius
 
         user_control = self.spectator_mode or self.simulation_paused or getattr(self, '_user_moved_camera', False)
+        camera_view = getattr(self, 'camera_view', 'chase')
+        zoom = getattr(self, '_zoom_factor', 1.0)
 
-        if user_control:
+        if camera_view == 'flypov' and not self.spectator_mode:
+            # Fly POV: first-person view from the fly looking down the tunnel (+x)
+            # Camera sits at the fly; tight window shows tunnel ahead
+            center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
+            self.ax.set_xlim(center[0] - 2.0 * zoom, center[0] + 40.0 * zoom)
+            self.ax.set_ylim(center[1] - 5.0 * zoom, center[1] + 5.0 * zoom)
+            self.ax.set_zlim(center[2] - 5.0 * zoom, center[2] + 5.0 * zoom)
+            if not getattr(self, '_view_initialized', False):
+                # elev=0, azim=0 looks along +x; roll=90 puts world +y (up) on screen top
+                self.ax.view_init(elev=0, azim=0, roll=90)
+                self._view_initialized = True
+        elif user_control:
             # User controls camera: center on fly + manual pan offset, keep user zoom/rotation
             center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
-            zoom = getattr(self, '_zoom_factor', 1.0)
             half_x = 20.0 * zoom
             half_yz = tunnel_radius * zoom
             self.ax.set_xlim(center[0] - half_x, center[0] + half_x)
@@ -753,8 +767,7 @@ class FruitFlyRacer3D:
                 self.ax.view_init(elev=10, azim=0)
                 self._view_initialized = True
         else:
-            # Auto-follow: center view on fly
-            zoom = getattr(self, '_zoom_factor', 1.0)
+            # Auto-follow (chase cam): center view on fly
             half_x = 20.0 * zoom
             half_yz = tunnel_radius * zoom
             self.ax.set_xlim(fly_pos[0] - half_x, fly_pos[0] + half_x)
@@ -915,10 +928,45 @@ class FruitFlyRacer3D:
         """Handle mouse release"""
         self._dragging = False
 
+    def on_view_mode_change(self, event=None):
+        """Handle camera view mode selection from combobox"""
+        mode_text = self.view_mode_var.get()
+        if mode_text == "Chase Cam":
+            self.camera_view = "chase"
+            self.spectator_mode = False
+            self.spectator_var.set(False)
+            self._user_moved_camera = False
+            self._zoom_factor = 1.0
+            self._cam_offset = np.array([0.0, 0.0, 0.0])
+            self._view_initialized = False
+            self.log("=== CAMERA VIEW: CHASE CAM ===")
+            self.log("Camera follows the fly from behind/above")
+        elif mode_text == "Fly POV":
+            self.camera_view = "flypov"
+            self.spectator_mode = False
+            self.spectator_var.set(False)
+            self._user_moved_camera = False
+            self._view_initialized = False  # force POV view angle
+            self.log("=== CAMERA VIEW: FLY POV ===")
+            self.log("First-person view from the fly's eyes looking down the tunnel")
+            self.log("Drag mouse to look around, scroll to zoom")
+        elif mode_text == "Spectator":
+            self.camera_view = "spectator"
+            self.spectator_var.set(True)
+            self.toggle_spectator_mode()
+
     def toggle_spectator_mode(self):
         """Toggle spectator mode - free camera, fly keeps flying"""
         old_mode = self.spectator_mode
         self.spectator_mode = self.spectator_var.get()
+
+        # Sync combobox if changed via checkbox
+        if self.spectator_mode and self.view_mode_var.get() != "Spectator":
+            self.view_mode_var.set("Spectator")
+            self.camera_view = "spectator"
+        elif not self.spectator_mode and self.view_mode_var.get() == "Spectator":
+            self.view_mode_var.set("Chase Cam")
+            self.camera_view = "chase"
 
         if self.spectator_mode and not old_mode:
             self.log("=== SPECTATOR MODE ENABLED ===")

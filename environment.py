@@ -37,8 +37,9 @@ class RacingEnvironment:
         
         # Obstacles
         self.obstacles = []
-        # Obstacle types - only shapes that are properly rendered in 3D
-        self.obstacle_types = ['sphere', 'box', 'cylinder', 'cube']
+        # Obstacle types - 3D shapes: squares=cube, triangles=pyramid/tetrahedron,
+        # circles=sphere, rectangles=box
+        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron']
         
         # Physics limits
         self.current_speed = 0.0
@@ -150,13 +151,13 @@ class RacingEnvironment:
                     # Random position within tunnel cross-section - ensure inside cylinder
                     # position = [x=tunnel direction, y=vertical, z=lateral]
                     angle = random.uniform(0, 2 * math.pi)
-                    # Keep obstacles well inside tunnel radius
-                    radius = random.uniform(0, self.tunnel_radius * 0.6)
+                    # Keep obstacle centers well inside tunnel radius
+                    radius = random.uniform(0, self.tunnel_radius * 0.4)
                     lateral = radius * math.cos(angle)   # -> position[2]
                     vertical = radius * math.sin(angle)  # -> position[1]
 
                     # Random size - bigger obstacles
-                    size = random.uniform(1.5, min(4.0, self.tunnel_radius * 0.4))
+                    size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
 
                     # Generate obstacle - position stored as [tunnel_x, vertical_y, lateral_z]
                     obstacle = {
@@ -228,12 +229,12 @@ class RacingEnvironment:
                 print(f"Obstacle tunnel position out of bounds: {pos[0]}")
                 return False
             cross_section_radius = np.sqrt(pos[1]**2 + pos[2]**2)
-            if cross_section_radius > self.tunnel_radius * 0.9:
+            if cross_section_radius > self.tunnel_radius * 0.95:
                 print(f"Obstacle cross-section position out of bounds: {cross_section_radius}")
                 return False
 
             # Check size is reasonable
-            if obstacle['size'] < 0.1 or obstacle['size'] > 5.0:
+            if obstacle['size'] < 0.1 or obstacle['size'] > 8.0:
                 print(f"Obstacle size out of range: {obstacle['size']}")
                 return False
 
