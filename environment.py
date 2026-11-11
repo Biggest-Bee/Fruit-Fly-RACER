@@ -335,6 +335,81 @@ class RacingEnvironment:
         
         return current_wind
     
+    # Approximate collision radii as fraction of obstacle size, per shape
+    _COLLISION_RADIUS = {
+        'sphere': 1.0,      # drawn as radius=size
+        'cylinder': 0.6,
+        'cube': 0.6,
+        'box': 0.55,
+        'pyramid': 0.55,
+        'tetrahedron': 0.55,
+    }
+
+    def collision_radius(self, obstacle: Dict) -> float:
+        """Get the solid collision radius for an obstacle"""
+        return obstacle['size'] * self._COLLISION_RADIUS.get(obstacle.get('type', 'sphere'), 0.6)
+
+    def resolve_collision(self, position: np.ndarray):
+        """
+        Push position out of any obstacle it overlaps - makes obstacles solid.
+        Returns (new_position, hit_obstacle or None).
+        """
+        pos = np.array(position, dtype=float)
+        for obs in self.obstacles:
+            obs_pos = obs['position']
+            # Broadphase: skip obstacles far away along the tunnel
+            if abs(obs_pos[0] - pos[0]) > self.collision_radius(obs) + 1.0:
+                continue
+            d = pos - obs_pos
+            dist = np.linalg.norm(d)
+            radius = self.collision_radius(obs)
+            if dist < radius:
+                if dist > 1e-6:
+                    pos = obs_pos + d / dist * radius
+                else:
+                    pos = obs_pos + np.array([0.0, 0.0, radius])
+                return pos, obs
+        return pos, None
+
+    def get_steering(self, position: np.ndarray, lookahead: float = 20.0):
+        """
+        Compute lateral/vertical steering to avoid obstacles ahead.
+        Returns a [0, vy, vz] steering vector (m/s scale).
+        """
+        steer = np.zeros(3)
+        x, y, z = position
+
+        for obs in self.obstacles:
+            ox, oy, oz = obs['position']
+            dx = ox - x
+            if dx < 0.5 or dx > lookahead:
+                continue  # only obstacles ahead of the fly
+
+            dy, dz = oy - y, oz - z
+            dist_yz = np.hypot(dy, dz)
+            obs_radius = self.collision_radius(obs)
+            margin = obs_radius + 3.0
+
+            if dist_yz < margin:
+                if dist_yz > 1e-6:
+                    # Push away from obstacle in the cross-section plane
+                    steer[1] -= (dy / dist_yz) * (margin - dist_yz)
+                    steer[2] -= (dz / dist_yz) * (margin - dist_yz)
+                else:
+                    # Dead center - random jink
+                    steer[1] += random.uniform(-1.0, 1.0)
+                    steer[2] += random.uniform(-1.0, 1.0)
+
+        # Gentle centering force keeps fly near tunnel middle between obstacles
+        steer[1] += -y * 0.08
+        steer[2] += -z * 0.08
+
+        # Clamp steering magnitude
+        lat_norm = np.linalg.norm(steer[1:])
+        if lat_norm > 3.0:
+            steer[1:] *= 3.0 / lat_norm
+        return steer
+
     def check_collision(self, position: np.ndarray) -> bool:
         """
         Check if position collides with obstacles or walls
@@ -361,9 +436,9 @@ class RacingEnvironment:
             if obs_pos[0] > x + 2.0:  # Skip obstacles behind or too close
                 continue
 
-            # Simple distance-based collision (less aggressive)
+            # Distance-based collision using per-shape solid radius
             distance = np.linalg.norm(position - obs_pos)
-            if distance < obs_size * 0.5:  # Reduced collision radius
+            if distance < self.collision_radius(obs):
 
                 # Check if hole (pass through) - hole offset along lateral axis
                 if obstacle['has_hole']:

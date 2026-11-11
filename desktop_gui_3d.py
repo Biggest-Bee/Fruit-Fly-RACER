@@ -449,24 +449,36 @@ class FruitFlyRacer3D:
                 # Apply actuator commands to the fly
                 self.fly_model.apply_neural_control(actuator_commands)
 
-                # Generate desired velocity for flight (forward along X-axis + slight lift)
-                desired_velocity = np.array([self.environment.max_speed * 0.8, 0.0, 0.0])  # Forward along X-axis
+                # Generate flight velocity: forward + obstacle avoidance + organic bobbing
+                steer = self.environment.get_steering(position)
+                t = step * dt
+                bob_y = 0.6 * np.sin(t * 1.7)
+                bob_z = 0.6 * np.cos(t * 1.3)
+                desired_velocity = np.array([
+                    self.environment.max_speed * 0.8,   # forward along tunnel
+                    steer[1] + bob_y,                  # vertical steering + bob
+                    steer[2] + bob_z                   # lateral steering + bob
+                ])
                 desired_turn = np.array([0.0, 0.0])  # No turning for now
 
                 # Step MuJoCo physics with flight force
                 self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
 
-                # Get updated position from physics (use body position/velocity)
+                # Get updated position from physics
                 if self.fly_model.data is not None:
                     position = self.fly_model.get_position()
                     velocity = self.fly_model.get_velocity()
-                
-                # Check collision - penalty only, race continues until finish
-                if self.environment.check_collision(position):
+
+                # Solid obstacles: push fly out if overlapping, bounce off
+                new_pos, hit = self.environment.resolve_collision(position)
+                if hit is not None:
+                    self.fly_model._set_position(new_pos)
+                    position = new_pos
                     penalty = self.rewards.calculate_collision_penalty()
                     self.rewards.update_total_points(penalty=penalty)
-                    # Brief slowdown on collision so it feels impactful
-                    self.fly_model._fly_vel *= 0.5
+                    # Bounce: reflect forward velocity, bleed off lateral speed
+                    self.fly_model._fly_vel[0] *= -0.3
+                    self.fly_model._fly_vel[1:] *= 0.4
                 
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
