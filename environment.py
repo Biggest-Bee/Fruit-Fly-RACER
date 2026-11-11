@@ -47,6 +47,11 @@ class RacingEnvironment:
         self.current_altitude = 0.0
         self.current_direction = np.array([0.0, 0.0, 1.0])
         self.current_position = np.array([0.0, 0.0, 0.0])
+
+        # Steering gains - learned/adjusted per episode based on score
+        self.steer_gain = 1.0       # scales avoidance steering
+        self.center_gain = 0.08     # pull toward tunnel center
+        self.avoid_margin = 3.0     # extra margin around obstacles
         
         print(f"Racing Environment initialized: {tunnel_length}m tunnel, {tunnel_radius}m radius")
 
@@ -388,7 +393,7 @@ class RacingEnvironment:
             dy, dz = oy - y, oz - z
             dist_yz = np.hypot(dy, dz)
             obs_radius = self.collision_radius(obs)
-            margin = obs_radius + 3.0
+            margin = obs_radius + self.avoid_margin
 
             if dist_yz < margin:
                 if dist_yz > 1e-6:
@@ -401,13 +406,14 @@ class RacingEnvironment:
                     steer[2] += random.uniform(-1.0, 1.0)
 
         # Gentle centering force keeps fly near tunnel middle between obstacles
-        steer[1] += -y * 0.08
-        steer[2] += -z * 0.08
+        steer[1] += -y * self.center_gain
+        steer[2] += -z * self.center_gain
 
-        # Clamp steering magnitude
+        # Clamp steering magnitude (gain learned per episode)
         lat_norm = np.linalg.norm(steer[1:])
-        if lat_norm > 3.0:
-            steer[1:] *= 3.0 / lat_norm
+        max_steer = 3.0 * self.steer_gain
+        if lat_norm > max_steer:
+            steer[1:] *= max_steer / lat_norm
         return steer
 
     def check_collision(self, position: np.ndarray) -> bool:

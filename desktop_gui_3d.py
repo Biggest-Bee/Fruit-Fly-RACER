@@ -26,6 +26,7 @@ from agent_logic import AgentLogic
 from rewards import RewardSystem
 from sync_manager import SyncManager
 from mujoco_fly_model import MuJoCoFlyModel
+from fly_brain import FlyBrain
 
 
 class FruitFlyRacer3D:
@@ -57,6 +58,27 @@ class FruitFlyRacer3D:
             checkpoint_file="fly_memory.pkl",
             remote_url=None
         )
+
+        # Learned flight brain (connectome reservoir + trained readout)
+        self.brain = FlyBrain()
+        # Restore learned weights/gains from checkpoint if present
+        try:
+            ckpt = self.sync_manager.load_checkpoint()
+            if ckpt:
+                self.brain.set_weights(ckpt.get('brain_weights'))
+                gains = ckpt.get('gains')
+                if gains:
+                    self.environment.steer_gain = gains[0]
+                    self.environment.center_gain = gains[1]
+                    self.environment.avoid_margin = gains[2]
+                    print(f"Restored brain + steering gains from checkpoint")
+        except Exception as e:
+            print(f"No usable checkpoint ({e}) - starting fresh brain")
+        # Gain hill-climbing state
+        self._gain_best_score = -1.0
+        self._best_gains = (self.environment.steer_gain,
+                            self.environment.center_gain,
+                            self.environment.avoid_margin)
         
         # MuJoCo viewer/renderer
         self.viewer = None
@@ -374,6 +396,14 @@ class FruitFlyRacer3D:
                     self.best_time = episode_time
                     self.log(f"New best time! {self.best_time:.2f}s")
 
+                # Brain end-of-episode: decay exploration, adapt steering gains
+                self.brain.end_episode(result['score'], result['score'] >= self.best_score)
+                self._adapt_gains(result)
+                if result['score'] >= self.best_score and self.best_score > 0:
+                    self._save_checkpoint()
+                elif episode_count % 20 == 0:
+                    self._save_checkpoint()  # periodic save anyway
+
                 # Update GUI every 10 episodes
                 if episode_count % 10 == 0:
                     self.root.after(0, self.update_status)
@@ -410,6 +440,7 @@ class FruitFlyRacer3D:
             self.environment.reset()
             self.fly_model.reset()
             self.rewards.reset()
+            self.brain.reset_episode()
 
             # Run until the fly reaches the finish line (no step cap)
             step = 0
@@ -449,17 +480,32 @@ class FruitFlyRacer3D:
                 # Apply actuator commands to the fly
                 self.fly_model.apply_neural_control(actuator_commands)
 
-                # Generate flight velocity: forward + obstacle avoidance + organic bobbing
+                # Fly brain: sensory features -> reservoir -> learned steering
+                feat = self.brain.features(position, velocity, self.environment.obstacles)
+                brain_act, bstate = self.brain.act(feat)
+
+                # Teacher policy: potential-field steering + organic bobbing
                 steer = self.environment.get_steering(position)
                 t = step * dt
-                bob_y = 0.6 * np.sin(t * 1.7)
-                bob_z = 0.6 * np.cos(t * 1.3)
+                teacher_y = steer[1] + 0.6 * np.sin(t * 1.7)   # vertical
+                teacher_z = steer[2] + 0.6 * np.cos(t * 1.3)   # lateral
+
+                # Brain takes over gradually over ~30 episodes
+                alpha = min(1.0, self.brain.episode_count / 30.0)
+                lat_y = (1 - alpha) * teacher_y + alpha * brain_act[0]
+                lat_z = (1 - alpha) * teacher_z + alpha * brain_act[1]
+
                 desired_velocity = np.array([
                     self.environment.max_speed * 0.8,   # forward along tunnel
-                    steer[1] + bob_y,                  # vertical steering + bob
-                    steer[2] + bob_z                   # lateral steering + bob
+                    np.clip(lat_y, -4.0, 4.0),
+                    np.clip(lat_z, -4.0, 4.0)
                 ])
-                desired_turn = np.array([0.0, 0.0])  # No turning for now
+                desired_turn = np.array([0.0, 0.0])
+
+                # Brain learns from teacher demonstrations
+                self.brain.record(bstate, np.array([teacher_y, teacher_z]))
+                if step % 10 == 0:
+                    self.brain.learn(steps=5)
 
                 # Step MuJoCo physics with flight force
                 self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
@@ -509,6 +555,36 @@ class FruitFlyRacer3D:
             self.log(f"Error in episode: {e}")
             return {'score': 0.0, 'progress': 0.0, 'collisions': 0, 'finish_reached': False}
     
+    def _adapt_gains(self, result):
+        """Hill-climb steering gains: keep what scored well, perturb what didn't"""
+        env = self.environment
+        score = result['score']
+        if score >= self._gain_best_score:
+            self._gain_best_score = score
+            self._best_gains = (env.steer_gain, env.center_gain, env.avoid_margin)
+        else:
+            # Revert to best-known gains, then perturb for exploration
+            env.steer_gain, env.center_gain, env.avoid_margin = self._best_gains
+            env.steer_gain = float(np.clip(
+                env.steer_gain * np.exp(self.brain.rng.normal(0, 0.15)), 0.3, 2.5))
+            env.center_gain = float(np.clip(
+                env.center_gain * np.exp(self.brain.rng.normal(0, 0.15)), 0.02, 0.3))
+            env.avoid_margin = float(np.clip(
+                env.avoid_margin + self.brain.rng.normal(0, 0.5), 1.0, 6.0))
+
+    def _save_checkpoint(self):
+        """Persist brain weights + steering gains to fly_memory.pkl"""
+        try:
+            self.sync_manager.save_checkpoint({
+                'brain_weights': self.brain.get_weights(),
+                'gains': (self.environment.steer_gain,
+                          self.environment.center_gain,
+                          self.environment.avoid_margin),
+                'best_score': self.best_score,
+            })
+        except Exception as e:
+            self.log(f"Checkpoint save failed: {e}")
+
     def create_mujoco_scene(self):
         """Create MuJoCo scene with tunnel and obstacles"""
         # Create a simple world with the fly and tunnel
