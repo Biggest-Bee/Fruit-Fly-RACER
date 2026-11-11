@@ -1193,17 +1193,14 @@ class FruitFlyRacer3D:
                 self.ax.view_init(elev=25, azim=270, vertical_axis='y')
                 self._view_initialized = True
 
-        # Zoom-level indicator (top-right corner) - temporary debug aid to
-        # correlate the obstacle color-flash artifact with zoom distance
-        if not hasattr(self, '_zoom_text'):
-            self._zoom_text = self.fig.text(
-                0.98, 0.95, '', ha='right', va='top', fontsize=9,
-                color='white',
-                bbox=dict(facecolor='black', alpha=0.5, pad=2))
-        win_x = 14.0 * zoom
-        win_yz = 7.0 * zoom
-        self._zoom_text.set_text(
-            f'Zoom {zoom:.2f}x | view {win_x:.1f}x{win_yz:.1f}m')
+        # remove the temporary zoom indicator if it was created
+        zt = getattr(self, '_zoom_text', None)
+        if zt is not None:
+            try:
+                zt.remove()
+            except Exception:
+                pass
+            self._zoom_text = None
 
         # Draw the real official flybody model (all geoms: body, eyes,
         # antennae, legs, wings) instead of a proxy shape
@@ -1291,9 +1288,11 @@ class FruitFlyRacer3D:
         else:
             self._zoom_factor *= 1.15  # zoom out
 
-        # Clamp: can't zoom out beyond whole tunnel, can't zoom in too close
+        # Clamp: can't zoom out beyond whole tunnel. Min zoom 0.7 - below
+        # ~0.66 the camera gets close enough that matplotlib's depth
+        # sorting degenerates and obstacle faces flash over the fly
         max_zoom_out = max(tunnel_length / 40.0, tunnel_radius / 10.0)
-        self._zoom_factor = float(np.clip(self._zoom_factor, 0.08, max_zoom_out))
+        self._zoom_factor = float(np.clip(self._zoom_factor, 0.7, max_zoom_out))
 
         # NOTE: don't set _user_moved_camera here - scrolling should zoom
         # without kicking the user out of chase-cam mode
