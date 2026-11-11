@@ -587,7 +587,7 @@ class FruitFlyRacer3D:
             p1 = np.array([c[0], rim_yz[i, 0], rim_yz[i, 1]])
             p2 = np.array([c[0], rim_yz[j, 0], rim_yz[j, 1]])
             polys.append([c, p1, p2])
-        coll = Poly3DCollection(polys, alpha=1.0, facecolor=color,
+        coll = Poly3DCollection(polys, alpha=0.35, facecolor=color,
                                 edgecolor='none')
         self.ax.add_collection3d(coll)
 
@@ -614,17 +614,11 @@ class FruitFlyRacer3D:
         y_grid = tunnel_radius * np.cos(theta_grid)
         z_grid = tunnel_radius * np.sin(theta_grid)
 
-        # Draw cylinder walls (opaque - enclosed)
-        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=1.0, color='blue', edgecolor='none')
-
-        # Inner wall layer (reversed winding -> normals point inward) so the
-        # tunnel interior is properly shaded when camera is inside
-        theta_in = np.linspace(2*np.pi, 0, 100)
-        theta_grid_in, x_grid_in = np.meshgrid(theta_in, x)
-        r_in = tunnel_radius * 0.99
-        y_grid_in = r_in * np.cos(theta_grid_in)
-        z_grid_in = r_in * np.sin(theta_grid_in)
-        self.ax.plot_surface(x_grid_in, y_grid_in, z_grid_in, alpha=1.0, color='steelblue', edgecolor='none')
+        # Single semi-transparent wall - visible from both sides so the
+        # tunnel interior (fly + obstacles) can be seen from any camera angle.
+        # (matplotlib cameras always render from outside the bounding box,
+        #  so an opaque wall would hide everything inside)
+        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.18, color='blue', edgecolor='none')
 
         # Draw tunnel end caps (start and finish) - enclosed
         # Start cap ring (X = -tunnel_length/2)
