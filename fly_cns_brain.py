@@ -15,8 +15,11 @@ Interface matches FlyBrain so it can drop into desktop_gui_3d.py.
 import numpy as np
 import os
 
+ANNOT_PATH = 'data/body-annotations-male-cns-v1.0-minconf-0.5.feather'
 CONN_PATH = 'data/connectome-weights-male-cns-v1.0-minconf-0.5.feather'
 CACHE_PATH = 'fly_cns_reservoir.npz'
+NODES_PATH = 'fly_cns_nodes.npy'
+CELLTYPES_PATH = 'fly_cns_celltypes.npz'
 
 N_FEATURES = 36
 N_ACTIONS = 2
@@ -39,10 +42,6 @@ class FlyCNSBrain:
         self._steps = 0
         self._pred = np.zeros(N_ACTIONS)
 
-        # Input projection: dense random, float32 (~30MB for 211k x 36)
-        self.W_in = (self.rng.normal(0, 0.4, (self.n_neurons, N_FEATURES))
-                     ).astype(np.float32)
-
         # Learned readout
         self.W_out = np.zeros((N_ACTIONS, self.n_neurons), dtype=np.float32)
         self.b_out = np.zeros(N_ACTIONS, dtype=np.float32)
@@ -57,6 +56,139 @@ class FlyCNSBrain:
         self.episode_count = 0
         self._loaded = False
 
+        # --- real fly cell types from MaleCNS annotations ---
+        self.node_ids = getattr(self, 'node_ids', None)
+        self.superclass = None
+        self.cell_class = None
+        self.cell_type = None
+        self.superclass_names = []
+        self.class_names = []
+        self.type_names = []
+        self.sensory_mask = None
+        self.motor_mask = None
+        self._load_cell_types()
+        self._build_io_matrices()
+
+    # ---------------- cell types ----------------
+
+    _SENSORY_SUPERCLASSES = {
+        'cb_sensory', 'vnc_sensory', 'ol_sensory',
+        'visual_projection', 'sensory_ascending',
+    }
+    _MOTOR_SUPERCLASSES = {
+        'descending_neuron', 'vnc_motor', 'cb_motor',
+        'ascending_neuron', 'vnc_efferent',
+    }
+
+    def _load_cell_types(self):
+        """Annotate every reservoir neuron with its real MaleCNS cell type."""
+        if self.node_ids is None:
+            return
+        n = self.n_neurons
+        try:
+            if os.path.exists(CELLTYPES_PATH):
+                d = np.load(CELLTYPES_PATH, allow_pickle=True)
+                if len(d['superclass']) == n:
+                    self.superclass = d['superclass']
+                    self.cell_class = d['cell_class']
+                    self.cell_type = d['cell_type']
+                    self.superclass_names = list(d['superclass_names'])
+                    self.class_names = list(d['class_names'])
+                    self.type_names = list(d['type_names'])
+                    self._make_masks()
+                    return
+        except Exception:
+            pass
+
+        import pyarrow as pa
+        import pandas as pd
+        dfs = []
+        with pa.memory_map(ANNOT_PATH, 'r') as src:
+            r = pa.ipc.open_file(src)
+            for i in range(r.num_record_batches):
+                dfs.append(r.get_batch(i).select(
+                    ['bodyId', 'superclass', 'class', 'type']).to_pandas())
+        df = pd.concat(dfs, ignore_index=True)
+
+        # node_ids is sorted unique bodyId; map each annotation row to node idx
+        pos = np.searchsorted(self.node_ids, df['bodyId'].to_numpy())
+        pos = np.clip(pos, 0, n - 1)
+        valid = self.node_ids[pos] == df['bodyId'].to_numpy()
+
+        def encode(col):
+            vals = df[col].fillna('unknown').astype(str).to_numpy()
+            names = np.array(sorted(set(vals)))
+            codes = np.searchsorted(names, vals).astype(np.int32)
+            out = np.full(n, -1, dtype=np.int32)
+            out[pos[valid]] = codes[valid]
+            return out, names.tolist()
+
+        self.superclass, self.superclass_names = encode('superclass')
+        self.cell_class, self.class_names = encode('class')
+        self.cell_type, self.type_names = encode('type')
+        self._make_masks()
+
+        try:
+            np.savez(CELLTYPES_PATH,
+                     superclass=self.superclass, cell_class=self.cell_class,
+                     cell_type=self.cell_type,
+                     superclass_names=np.array(self.superclass_names),
+                     class_names=np.array(self.class_names),
+                     type_names=np.array(self.type_names))
+        except Exception:
+            pass
+
+        # report composition
+        counts = {}
+        for i, name in enumerate(self.superclass_names):
+            counts[name] = int((self.superclass == i).sum())
+        top = sorted(counts.items(), key=lambda x: -x[1])[:8]
+        print("FlyCNSBrain cell types:",
+              ", ".join(f"{k}={v:,}" for k, v in top))
+
+    def _make_masks(self):
+        sens = set(self._SENSORY_SUPERCLASSES)
+        mot = set(self._MOTOR_SUPERCLASSES)
+        self.sensory_mask = np.array(
+            [self.superclass_names[s] in sens
+             for s in self.superclass if s >= 0], dtype=bool)
+        self.motor_mask = np.array(
+            [self.superclass_names[s] in mot
+             for s in self.superclass if s >= 0], dtype=bool)
+        # pad/truncate safety
+        if len(self.sensory_mask) != self.n_neurons:
+            self.sensory_mask = np.zeros(self.n_neurons, bool)
+            self.motor_mask = np.zeros(self.n_neurons, bool)
+
+    # ---------------- I/O matrices ----------------
+
+    def _build_io_matrices(self):
+        """Cell-type-targeted input projection + premotor readout."""
+        n = self.n_neurons
+        # Sensory-targeted W_in: real sensory neurons get ~2x drive
+        self.W_in = (self.rng.normal(0, 0.4, (n, N_FEATURES))
+                     ).astype(np.float32)
+        if self.sensory_mask is not None and self.sensory_mask.any():
+            self.W_in[self.sensory_mask] *= 2.0
+            print(f"FlyCNSBrain: W_in boosted on "
+                  f"{int(self.sensory_mask.sum()):,} sensory neurons")
+
+        # Premotor readout: fixed sparse projection from motor-related
+        # populations to the 59 official flybody actuators
+        self.W_motor = np.zeros((59, n), dtype=np.float32)
+        if self.motor_mask is not None and self.motor_mask.any():
+            mrows = np.where(self.motor_mask)[0]
+            # each actuator samples ~300 motor neurons
+            for a in range(59):
+                sel = self.rng.choice(mrows, size=min(300, len(mrows)),
+                                      replace=False)
+                self.W_motor[a, sel] = self.rng.normal(0, 0.2, len(sel))
+            print(f"FlyCNSBrain: W_motor wired to "
+                  f"{len(mrows):,} motor/descending neurons")
+        else:
+            mask = self.rng.random((59, n)) < 0.001
+            self.W_motor[mask] = self.rng.normal(0, 0.2, mask.sum())
+
     # ---------------- reservoir build ----------------
 
     def _load_or_build_reservoir(self, cache_path):
@@ -65,19 +197,45 @@ class FlyCNSBrain:
         if os.path.exists(cache_path):
             try:
                 W = sp.load_npz(cache_path).tocsr()
-                print(f"FlyCNSBrain: loaded full connectome "
+                print(f"FlyCNSBrain: loaded MaleCNS connectome "
                       f"({W.shape[0]} neurons, {W.nnz} synapses)")
+                self.node_ids = self._load_node_ids(W.shape[0])
                 return self._scale_reservoir(W)
             except Exception as e:
                 print(f"FlyCNSBrain: cache load failed ({e}), rebuilding")
 
         W = self._build_reservoir()
+        self.node_ids = self._load_node_ids(W.shape[0])
         try:
             sp.save_npz(cache_path, W.tocsr())
             print(f"FlyCNSBrain: cached reservoir to {cache_path}")
         except Exception as e:
             print(f"FlyCNSBrain: could not cache reservoir ({e})")
         return self._scale_reservoir(W)
+
+    def _load_node_ids(self, n):
+        """Load the bodyId for each reservoir neuron (for cell typing)."""
+        if os.path.exists(NODES_PATH):
+            try:
+                ids = np.load(NODES_PATH)
+                if len(ids) == n:
+                    return ids
+            except Exception:
+                pass
+        # Fallback: re-derive from annotations (sorted unique bodyId)
+        try:
+            import pyarrow as pa
+            ids = []
+            with pa.memory_map(ANNOT_PATH, 'r') as src:
+                r = pa.ipc.open_file(src)
+                for i in range(r.num_record_batches):
+                    ids.append(r.get_batch(i).column('bodyId').to_numpy())
+            ids = np.unique(np.concatenate(ids)).astype(np.int64)
+            if len(ids) == n:
+                return ids
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _scale_reservoir(W, target_radius=0.9, iters=30):
@@ -102,34 +260,29 @@ class FlyCNSBrain:
         return W.tocsr()
 
     def _build_reservoir(self):
-        """Stream the FULL MaleCNS connectome (all 151.8M edges) into CSR.
+        """Stream MaleCNS neuron->neuron edges into a CSR sparse matrix.
 
-        Node set = every unique body_pre/body_post ID in the connectome,
-        discovered with a 256MB bitmap pass (IDs < 2^31). Three passes over
-        the feather total; peak memory ~1.6GB for CSR arrays.
+        Node set = the 211,577 annotated CNS bodies, so every reservoir
+        neuron has a real cell type (superclass/class/type) from the
+        MaleCNS annotations. Edges to non-neuronal bodies (muscles,
+        other namespaces) are dropped - they cannot affect recurrence.
         """
         import pyarrow as pa
         import scipy.sparse as sp
 
-        # --- pass 0: bitmap of all endpoint IDs ---
-        nbits = 1 << 31
-        bitmap = np.zeros(nbits // 8, dtype=np.uint8)
-        with pa.memory_map(CONN_PATH, 'r') as src:
+        # --- node IDs from annotations (sorted unique bodyId) ---
+        ids = []
+        with pa.memory_map(ANNOT_PATH, 'r') as src:
             r = pa.ipc.open_file(src)
-            for bi in range(r.num_record_batches):
-                b = r.get_batch(bi)
-                for col in ('body_pre', 'body_post'):
-                    a = b.column(col).to_numpy()
-                    np.bitwise_or.at(bitmap, a >> 3,
-                                     (1 << (a & 7)).astype(np.uint8))
-                if bi % 400 == 0:
-                    print(f"  pass0 batch {bi}/{r.num_record_batches}")
-        ids = np.flatnonzero(
-            np.unpackbits(bitmap, bitorder='little')[:nbits]
-        ).astype(np.int64)
-        del bitmap
+            for i in range(r.num_record_batches):
+                ids.append(r.get_batch(i).column('bodyId').to_numpy())
+        ids = np.unique(np.concatenate(ids)).astype(np.int64)
         n = len(ids)
-        print(f"FlyCNSBrain: {n} unique connectome nodes")
+        print(f"FlyCNSBrain: {n} annotated CNS neurons")
+        try:
+            np.save(NODES_PATH, ids)
+        except Exception:
+            pass
 
         def map_ids(idarr):
             pos = np.searchsorted(ids, idarr)
@@ -195,17 +348,8 @@ class FlyCNSBrain:
                     print(f"  pass2 batch {bi}/{r.num_record_batches}")
 
         W = sp.csr_matrix((data, indices, indptr), shape=(n, n))
-        print(f"FlyCNSBrain: full graph built ({W.nnz} synapses)")
-
-        # Keep only the recurrent core: nodes with out-degree >= 20.
-        # Sink IDs (muscles, other-namespaced bodies) have no outgoing
-        # edges so they cannot affect dynamics - dropping them loses
-        # ~13% of edges but ~97% of recurrent structure.
-        deg = np.diff(W.indptr)
-        keep = deg >= 20
-        W = W[keep][:, keep].tocsr()
-        print(f"FlyCNSBrain: recurrent core = {W.shape[0]} neurons, "
-              f"{W.nnz} synapses")
+        print(f"FlyCNSBrain: neuron->neuron connectome built "
+              f"({W.nnz} synapses among {W.shape[0]} CNS neurons)")
         return W
 
     # ---------------- sensing (same as FlyBrain) ----------------
@@ -252,6 +396,25 @@ class FlyCNSBrain:
                 0, 0.8 * self.exploration, N_ACTIONS)
         # state is huge; return None - learning uses internal state
         return action.astype(np.float64), None
+
+    def actuator_commands(self):
+        """59-dim motor command for the official flybody actuators.
+
+        Premotor populations (descending/motor neurons) project through
+        W_motor onto the actuators, gated by a wingbeat rhythm so the
+        flybody's muscles actually contract in flight patterns.
+        """
+        if not hasattr(self, 'W_motor'):
+            return np.zeros(59)
+        drive = self.W_motor @ self.state          # (59,)
+        # ~8 Hz visible wingbeat at dt=0.02 (50 Hz sim rate)
+        t = self._steps * UPDATE_EVERY * 0.02
+        phase = np.arange(59) * 0.7
+        rhythm = np.sin(2 * np.pi * 8.0 * t + phase)
+        # steering modulates left/right asymmetry (yaw)
+        asym = np.tanh(self._pred[1]) * 0.3
+        rhythm = rhythm * (1.0 + asym * np.where(np.arange(59) % 2 == 0, 1, -1))
+        return (np.tanh(drive) * 0.6 * rhythm).astype(np.float64)
 
     def reset_episode(self):
         self.state *= 0.3   # partial decay, keep some history

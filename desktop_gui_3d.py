@@ -475,10 +475,15 @@ class FruitFlyRacer3D:
                 wind = self.environment.update_wind(step * dt)
                 
                 # Get neural inputs
-                neural_inputs = self.agent.get_neural_inputs(self.environment.obstacles, wind)
-                
-                # Get neural control from fly model (returns actuator commands)
-                actuator_commands = self.fly_model.connect_to_neural_network(neural_inputs)
+                # Neural control: connectome brain drives the official
+                # flybody's 59 actuators (motor/descending populations)
+                if hasattr(self.brain, 'actuator_commands'):
+                    actuator_commands = self.brain.actuator_commands()
+                else:
+                    neural_inputs = self.agent.get_neural_inputs(
+                        self.environment.obstacles, wind)
+                    actuator_commands = self.fly_model.connect_to_neural_network(
+                        neural_inputs)
 
                 # Apply actuator commands to the fly
                 self.fly_model.apply_neural_control(actuator_commands)
