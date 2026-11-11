@@ -357,6 +357,11 @@ class FruitFlyRacer3D:
 
             # Start 3D visualization
             self.start_mujoco_viewer()
+
+            # Draw tunnel + obstacles immediately (previously only drawn
+            # on obstacle regen every 10 episodes - with slower episodes
+            # the tunnel appeared to never generate)
+            self.update_mujoco_scene()
             
             # Run simulation loop
             episode_count = 0

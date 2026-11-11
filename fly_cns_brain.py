@@ -78,6 +78,7 @@ class FlyCNSBrain:
         self.exploration = 1.0
         self.episode_count = 0
         self._loaded = False
+        self._act_smooth = np.zeros(N_ACTIONS, dtype=np.float64)
 
         # --- real fly cell types from MaleCNS annotations ---
         self.node_ids = getattr(self, 'node_ids', None)
@@ -441,8 +442,11 @@ class FlyCNSBrain:
         if self.exploration > 0:
             action = action + self.rng.normal(
                 0, 0.8 * self.exploration, N_ACTIONS)
+        # smooth motor output - spikes are noisy, real motor neurons
+        # low-pass into smooth steering
+        self._act_smooth = 0.75 * self._act_smooth + 0.25 * action
         # state is huge; return None - learning uses internal state
-        return action.astype(np.float64), None
+        return self._act_smooth.copy(), None
 
     def actuator_commands(self):
         """59-dim motor command for the official flybody actuators.
@@ -468,6 +472,7 @@ class FlyCNSBrain:
         self.v *= 0.3              # decay membrane potentials
         self.spikes[:] = 0.0
         self.refrac[:] = 0.0
+        self._act_smooth[:] = 0.0
 
     # ---------------- learning (online delta rule) ----------------
 

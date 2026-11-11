@@ -299,8 +299,15 @@ class MuJoCoFlyModel:
             if speed > self.max_speed:
                 target_vel = target_vel / speed * self.max_speed
 
-            # Smooth velocity transition
-            self._fly_vel = self._fly_vel * 0.8 + target_vel * 0.2  # 80% current, 20% target
+            # Smooth velocity transition - heavier inertia so the fly
+            # banks into turns instead of snapping direction (180s)
+            self._fly_vel = self._fly_vel * 0.88 + target_vel * 0.12
+
+            # Lateral/vertical agility limit - real flies can't slam
+            # sideways at full forward speed
+            lat_max = self.max_speed * 0.6
+            self._fly_vel[1] = np.clip(self._fly_vel[1], -lat_max, lat_max)
+            self._fly_vel[2] = np.clip(self._fly_vel[2], -lat_max, lat_max)
 
             # Update position based on velocity
             self._fly_pos = self._fly_pos + self._fly_vel * dt
