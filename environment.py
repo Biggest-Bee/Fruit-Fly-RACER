@@ -184,7 +184,7 @@ class RacingEnvironment:
                         'size': size,
                         'rotation': random.uniform(0, 2 * math.pi),
                         'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
-                        'hole_size': random.uniform(0.1, 0.3) if with_holes else 0.0,  # smaller holes
+                        'hole_size': random.uniform(0.03, 0.1) if with_holes else 0.0,  # small pinholes - mostly solid
                         'wall_mounted': wall_mounted
                     }
 
@@ -257,8 +257,8 @@ class RacingEnvironment:
                 print(f"Obstacle size out of range: {obstacle['size']}")
                 return False
 
-            # Check hole size is reasonable (smaller holes)
-            if obstacle['has_hole'] and (obstacle['hole_size'] < 0.05 or obstacle['hole_size'] > 0.4):
+            # Check hole size is reasonable (small pinholes)
+            if obstacle['has_hole'] and (obstacle['hole_size'] < 0.02 or obstacle['hole_size'] > 0.15):
                 print(f"Hole size out of range: {obstacle['hole_size']}")
                 return False
 
