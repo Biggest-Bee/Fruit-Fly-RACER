@@ -762,9 +762,10 @@ class FruitFlyRacer3D:
         x_cap = np.full_like(theta_cap, -tunnel_length/2)
         self.ax.plot(x_cap, y_cap, z_cap, color='green', linewidth=3, label='Start')
 
-        # Finish cap ring (X = +tunnel_length/2)
-        x_cap_finish = np.full_like(theta_cap, tunnel_length/2)
-        self.ax.plot(x_cap_finish, y_cap, z_cap, color='green', linewidth=3, label='Finish')
+        # Finish line ring - 10m before the end wall so the fly finishes
+        # before reaching the cap (matches get_progress_to_finish)
+        x_cap_finish = np.full_like(theta_cap, tunnel_length/2 - 10.0)
+        self.ax.plot(x_cap_finish, y_cap, z_cap, color='red', linewidth=3, label='Finish')
 
         # Filled end caps as triangle fans (proper enclosed tunnel - no see-through)
         center_start = np.array([-tunnel_length/2, 0.0, 0.0])

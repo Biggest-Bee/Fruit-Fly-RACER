@@ -147,8 +147,10 @@ class RacingEnvironment:
         try:
             for i in range(num_obstacles):
                 try:
-                    # Random position along tunnel
-                    z_pos = random.uniform(-self.tunnel_length/2 + 5, self.tunnel_length/2 - 5)
+                    # Random position along tunnel - keep obstacles before
+                    # the finish line (10m before the end wall)
+                    z_pos = random.uniform(-self.tunnel_length/2 + 5,
+                                           self.tunnel_length/2 - 15)
 
                     # Random obstacle type
                     obs_type = random.choice(self.obstacle_types)
@@ -466,10 +468,12 @@ class RacingEnvironment:
         Returns:
             Progress value between 0 and 1
         """
-        # For horizontal tunnel, progress is along X-axis
+        # For horizontal tunnel, progress is along X-axis.
+        # Finish line sits 10m before the end wall so the fly finishes
+        # without slamming into the cap.
         x = position[0]
         start_x = -self.tunnel_length / 2
-        finish_x = self.tunnel_length / 2
+        finish_x = self.tunnel_length / 2 - 10.0
 
         progress = (x - start_x) / (finish_x - start_x)
         return np.clip(progress, 0.0, 1.0)
