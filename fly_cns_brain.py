@@ -42,6 +42,29 @@ class FlyCNSBrain:
         self._steps = 0
         self._pred = np.zeros(N_ACTIONS)
 
+        # --- LIF spiking dynamics ---
+        # Each brain update runs N_SUBSTEPS leaky integrate-and-fire steps.
+        self.n_substeps = 10
+        self.dt = 0.02          # 20 ms per substep -> 200 ms per brain update
+        self.tau_mem = 0.05     # 50 ms membrane time constant
+        self.theta = 1.0        # spike threshold
+        self.t_refract = 2      # refractory period in substeps (40 ms)
+        self.rate_tau = 0.1     # firing-rate trace time constant
+        self.input_gain = 3.0   # sensory drive gain
+        self.syn_gain = 3.0     # synaptic weight gain (spiking regime)
+
+        self.v = np.zeros(self.n_neurons, dtype=np.float32)      # membrane V
+        self.spikes = np.zeros(self.n_neurons, dtype=np.float32) # last spikes
+        self.refrac = np.zeros(self.n_neurons, dtype=np.float32) # refractory ctr
+
+        # E/I signs: ~30% inhibitory per presynaptic neuron (approximation -
+        # connectome weights are synapse counts without transmitter labels)
+        self.sign = np.where(self.rng.random(self.n_neurons) < 0.3,
+                             -1.0, 1.0).astype(np.float32)
+        import scipy.sparse as sp
+        self.W_res = (sp.diags(self.sign) @ self.W_res).tocsr()
+        self.W_res.data *= np.float32(self.syn_gain)
+
         # Learned readout
         self.W_out = np.zeros((N_ACTIONS, self.n_neurons), dtype=np.float32)
         self.b_out = np.zeros(N_ACTIONS, dtype=np.float32)
@@ -352,6 +375,30 @@ class FlyCNSBrain:
               f"({W.nnz} synapses among {W.shape[0]} CNS neurons)")
         return W
 
+    def _lif_step(self, drive):
+        """One leaky integrate-and-fire step for all 211k neurons.
+
+        v += dt/tau * (-v + W_res @ spikes + drive)
+        spike when v >= theta (outside refractory), reset v, rate trace.
+        """
+        # synaptic input from presynaptic spikes + sensory drive
+        i_syn = self.W_res @ self.spikes
+        self.v += (self.dt / self.tau_mem) * (-self.v + i_syn + drive)
+
+        # refractory countdown
+        self.refrac[self.refrac > 0] -= 1
+
+        # spike detection
+        spk = (self.v >= self.theta) & (self.refrac <= 0)
+        if spk.any():
+            self.v[spk] = 0.0
+            self.refrac[spk] = self.t_refract
+        self.spikes = spk.astype(np.float32)
+
+        # firing-rate trace for the readouts
+        a = self.dt / self.rate_tau
+        self.state += a * (self.spikes - self.state)
+
     # ---------------- sensing (same as FlyBrain) ----------------
 
     def features(self, position, velocity, obstacles):
@@ -384,10 +431,10 @@ class FlyCNSBrain:
         feat = np.asarray(feat, dtype=np.float32)
 
         if self._steps % UPDATE_EVERY == 1:
-            drive = self.W_in @ feat
-            # full-connectome recurrent update
-            self.state = np.tanh(
-                LEAK * self.state + self.W_res @ self.state + drive)
+            drive = (self.W_in @ feat).astype(np.float32) * self.input_gain
+            # run LIF substeps: spikes propagate through the real connectome
+            for _ in range(self.n_substeps):
+                self._lif_step(drive)
             self._pred = self.W_out @ self.state + self.b_out
 
         action = np.tanh(self._pred) * ACTION_GAIN
@@ -417,7 +464,10 @@ class FlyCNSBrain:
         return (np.tanh(drive) * 0.6 * rhythm).astype(np.float64)
 
     def reset_episode(self):
-        self.state *= 0.3   # partial decay, keep some history
+        self.state *= 0.3          # decay rate trace
+        self.v *= 0.3              # decay membrane potentials
+        self.spikes[:] = 0.0
+        self.refrac[:] = 0.0
 
     # ---------------- learning (online delta rule) ----------------
 
