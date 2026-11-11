@@ -1143,10 +1143,14 @@ class FruitFlyRacer3D:
         self.ax.set_ylim(-tunnel_radius*1.5, tunnel_radius*1.5)
         self.ax.set_zlim(-tunnel_radius*1.5, tunnel_radius*1.5)
 
-        self.ax.set_xlabel('X (m) - Tunnel Length')
-        self.ax.set_ylabel('Y (m) - Vertical')
-        self.ax.set_zlabel('Z (m) - Horizontal')
-        self.ax.set_title('Fruit Fly Racer - Horizontal Tunnel View')
+        # Clean cinematic view: no ticks, labels, grid, or pane chrome
+        self.ax.set_xticks([]); self.ax.set_yticks([]); self.ax.set_zticks([])
+        self.ax.set_xlabel(''); self.ax.set_ylabel(''); self.ax.set_zlabel('')
+        self.ax.set_title('')
+        self.ax.grid(False)
+        self.ax.xaxis.pane.set_visible(False)
+        self.ax.yaxis.pane.set_visible(False)
+        self.ax.zaxis.pane.set_visible(False)
 
         # Set initial view angle only once - camera modes manage view afterwards
         if not getattr(self, '_view_initialized', False):
@@ -1235,10 +1239,7 @@ class FruitFlyRacer3D:
                                    color='yellow', linewidth=3, label='Velocity')
             vel_line._is_fly = True
 
-        # Update title with position and velocity
-        speed = np.linalg.norm(fly_vel)
-        stall = ' | STALLED' if getattr(self.fly_model, '_fly_stalled', False) else ''
-        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}) | Speed: {speed:.1f} m/s{stall}')
+        # (title removed for clean view - stall state is in fly_model._fly_stalled)
 
         self.canvas.draw()
 
