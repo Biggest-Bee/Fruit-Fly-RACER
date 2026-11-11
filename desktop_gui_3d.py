@@ -1013,7 +1013,7 @@ class FruitFlyRacer3D:
         # tunnel interior (fly + obstacles) can be seen from any camera angle.
         # (matplotlib cameras always render from outside the bounding box,
         #  so an opaque wall would hide everything inside)
-        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.04, color='blue', edgecolor='none')
+        self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.35, color='blue', edgecolor='none')
 
         # Draw tunnel end caps (start and finish) - enclosed
         # Start cap ring (X = -tunnel_length/2)
