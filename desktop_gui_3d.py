@@ -1151,6 +1151,10 @@ class FruitFlyRacer3D:
         self.ax.xaxis.pane.set_visible(False)
         self.ax.yaxis.pane.set_visible(False)
         self.ax.zaxis.pane.set_visible(False)
+        # axis spines/lines themselves (the remaining "ticks frame")
+        self.ax.xaxis.line.set_visible(False)
+        self.ax.yaxis.line.set_visible(False)
+        self.ax.zaxis.line.set_visible(False)
 
         # Set initial view angle only once - camera modes manage view afterwards
         if not getattr(self, '_view_initialized', False):
@@ -1229,7 +1233,15 @@ class FruitFlyRacer3D:
         # antennae, legs, wings) instead of a proxy shape
         self._draw_flybody(fly_pos, fly_vel)
 
-        # (velocity vector removed for clean view)
+        # Draw velocity vector (direction of flight)
+        if np.linalg.norm(fly_vel) > 0.1:
+            vel_scale = 2.0  # Scale velocity vector
+            vel_end = fly_pos + fly_vel * vel_scale
+            vel_line, = self.ax.plot([fly_pos[0], vel_end[0]],
+                                   [fly_pos[1], vel_end[1]],
+                                   [fly_pos[2], vel_end[2]],
+                                   color='yellow', linewidth=3)
+            vel_line._is_fly = True
 
         # (title removed for clean view - stall state is in fly_model._fly_stalled)
 
