@@ -729,6 +729,140 @@ class FruitFlyRacer3D:
                                 edgecolor='none')
         self.ax.add_collection3d(coll)
 
+    # ---------------- real flybody rendering ----------------
+
+    def _ensure_fly_render_data(self):
+        """Precompute ellipsoid approximations of every official flybody geom.
+
+        The flybody model is ~0.4 model units long; we scale it up to
+        ~0.45 m in the scene. Geom poses are static (no physics stepping),
+        so world-space verts are precomputed once and just translated
+        with the fly each frame.
+        """
+        if getattr(self, '_fly_render_ready', False):
+            return
+        m = self.fly_model.model
+        d = self.fly_model.data
+        mujoco.mj_forward(m, d)
+
+        # Low-poly unit sphere template (6x4 -> ~18 quad faces per geom)
+        nu, nv = 6, 4
+        u = np.linspace(0, 2 * np.pi, nu, endpoint=False)
+        v = np.linspace(0, np.pi, nv)
+        tpl = []
+        for vi in range(nv):
+            for ui in range(nu):
+                tpl.append([np.sin(v[vi]) * np.cos(u[ui]),
+                            np.sin(v[vi]) * np.sin(u[ui]),
+                            np.cos(v[vi])])
+        tpl = np.array(tpl)
+        faces = []
+        for vi in range(nv - 1):
+            for ui in range(nu):
+                a = vi * nu + ui
+                faces.append([a, vi * nu + (ui + 1) % nu,
+                              (vi + 1) * nu + (ui + 1) % nu,
+                              (vi + 1) * nu + ui])
+        tpl_faces = np.array(faces)
+        n_tpl_faces = len(tpl_faces)
+
+        # Axis remap: flybody model is Z-up with +X forward (head at +X,
+        # mouthparts below). Display coords are [x=tunnel, y=up, z=lateral]
+        # -> swap model Y and Z.
+        P = np.array([[1., 0., 0.],
+                      [0., 0., 1.],
+                      [0., 1., 0.]])
+
+        # MuJoCo geom type enum: plane=0 hfield=1 sphere=2 capsule=3
+        # ellipsoid=4 cylinder=5 box=6 mesh=7
+        def semi_axes(i, gt):
+            s = m.geom_size[i]
+            if gt == 2:    # sphere
+                return np.array([s[0]] * 3)
+            if gt == 3:    # capsule: radius + half-length along z
+                return np.array([s[0], s[0], s[0] + s[1]])
+            if gt == 4:    # ellipsoid: geom_size IS the semi-axes
+                return np.maximum(s, 1e-4)
+            if gt == 5:    # cylinder
+                return np.array([s[0], s[0], s[1] + s[0] * 0.3])
+            if gt == 6:    # box: half extents -> inscribed ellipsoid
+                return np.maximum(s * 0.85, 1e-4)
+            if gt == 7:    # mesh: AABB of real mesh vertices
+                try:
+                    mid = int(m.geom_dataid[i])
+                    adr = int(m.mesh_vertadr[mid])
+                    num = int(m.mesh_vertnum[mid])
+                    mv = m.mesh_vert
+                    mv = mv.reshape(-1, 3) if mv.ndim == 1 else mv
+                    vv = mv[adr:adr + num]
+                    ext = (vv.max(axis=0) - vv.min(axis=0)) / 2.0
+                    if np.all(ext > 1e-6):
+                        return np.maximum(ext * 0.9, 1e-4)
+                except Exception:
+                    pass
+                return np.maximum(np.asarray(s[:3]), 1e-4)
+            return np.array([0.01] * 3)
+
+        base_verts = []
+        face_idx = []
+        face_cols = []
+        max_r = 1e-6
+        vbase = 0
+        brown = np.array([0.42, 0.26, 0.15, 0.9])
+        for i in range(m.ngeom):
+            gt = int(m.geom_type[i])
+            if gt == 0:      # skip floor plane
+                continue
+            # offset from the ROOT body (thorax, body 1 = the body we
+            # teleport to fly_pos) so limbs keep their place in the pose
+            off = (d.geom_xpos[i] - d.xpos[1]).astype(np.float64)
+            R = d.geom_xmat[i].reshape(3, 3).astype(np.float64)
+            semi = semi_axes(i, gt)
+            # transform model frame -> display frame
+            R = P @ R
+            off = P @ off
+            # real fly colors come from materials (body cuticle, red eyes,
+            # translucent wing membranes) via geom_matid -> mat_rgba
+            matid = int(m.geom_matid[i]) if hasattr(m, 'geom_matid') else -1
+            if matid >= 0 and hasattr(m, 'mat_rgba'):
+                col = np.array(m.mat_rgba[matid], dtype=np.float64)
+                col[3] = max(col[3], 0.85)   # keep parts visible
+            else:
+                rgba = m.geom_rgba[i] if hasattr(m, 'geom_rgba') else brown
+                col = np.array([rgba[0], rgba[1], rgba[2], 0.9])
+
+            # scaled + rotated + offset verts (fly_pos added per frame)
+            bv = (tpl * semi) @ R.T + off
+            base_verts.append(bv)
+            face_idx.append(tpl_faces + vbase)
+            face_cols.append(np.tile(col, (n_tpl_faces, 1)))
+            vbase += len(tpl)
+            max_r = max(max_r, float(np.linalg.norm(off)) + float(np.max(semi)))
+
+        self._fly_base_verts = np.vstack(base_verts)
+        self._fly_faces_idx = np.vstack(face_idx)
+        self._fly_facecolors = np.vstack(face_cols)
+        # real fly ~0.4 units -> ~0.45 m in the scene
+        self._fly_vis_scale = 0.45 / (2.0 * max_r)
+        self._fly_base_verts *= self._fly_vis_scale
+        self._fly_render_ready = True
+        print(f"Flybody renderer: {m.ngeom} geoms -> "
+              f"{len(self._fly_faces_idx)} faces, scale={self._fly_vis_scale:.3f}")
+
+    def _draw_flybody(self, fly_pos):
+        """Draw the real flybody geoms as one merged Poly3DCollection."""
+        try:
+            self._ensure_fly_render_data()
+        except Exception as e:
+            self.log(f"Flybody render init failed: {e}")
+            return
+        V = self._fly_base_verts + np.asarray(fly_pos, dtype=np.float64)
+        polys = V[self._fly_faces_idx]
+        coll = Poly3DCollection(polys, facecolors=self._fly_facecolors,
+                                alpha=0.9, edgecolor='none')
+        coll._is_fly = True
+        self.ax.add_collection3d(coll)
+
     def draw_tunnel(self):
         """Draw the tunnel in 3D - horizontal cylinder along X-axis"""
         # Clear previous tunnel
@@ -933,39 +1067,9 @@ class FruitFlyRacer3D:
                 self.ax.view_init(elev=10, azim=0)
                 self._view_initialized = True
 
-        # Draw fly as an elongated shape (like a real fly)
-        # Create a simple fly body representation
-        fly_size = 0.3  # Size of fly representation
-
-        # Draw fly body (elongated ellipsoid along X-axis - tunnel direction)
-        u = np.linspace(0, 2 * np.pi, 20)
-        v = np.linspace(0, np.pi, 20)
-
-        # Elongated along X-axis (direction of flight through tunnel)
-        x = fly_pos[0] + fly_size * 2.0 * np.outer(np.ones(np.size(u)), np.cos(v))
-        y = fly_pos[1] + fly_size * 0.5 * np.outer(np.cos(u), np.sin(v))
-        z = fly_pos[2] + fly_size * 0.5 * np.outer(np.sin(u), np.sin(v))
-
-        fly_surface = self.ax.plot_surface(x, y, z, alpha=1.0, color='darkgreen')
-        fly_surface._is_fly = True
-
-        # Draw fly wings (two ellipses on top/bottom)
-        wing_size = fly_size * 0.8
-        for side in [-1, 1]:  # Top and bottom wings
-            # Wing position offset
-            wing_x = fly_pos[0]
-            wing_y = fly_pos[1] + side * fly_size * 0.3
-            wing_z = fly_pos[2]
-
-            # Wing as flattened ellipsoid
-            u_wing = np.linspace(0, 2 * np.pi, 15)
-            v_wing = np.linspace(0, np.pi, 15)
-            x_wing = wing_x + wing_size * np.outer(np.ones(np.size(u_wing)), np.cos(v_wing))
-            y_wing = wing_y + wing_size * 0.1 * np.outer(np.cos(u_wing), np.sin(v_wing))
-            z_wing = wing_z + wing_size * np.outer(np.sin(u_wing), np.sin(v_wing))
-
-            wing_surface = self.ax.plot_surface(x_wing, y_wing, z_wing, alpha=1.0, color='lightblue')
-            wing_surface._is_fly = True
+        # Draw the real official flybody model (all geoms: body, eyes,
+        # antennae, legs, wings) instead of a proxy shape
+        self._draw_flybody(fly_pos)
 
         # Draw velocity vector (direction of flight)
         if np.linalg.norm(fly_vel) > 0.1:
