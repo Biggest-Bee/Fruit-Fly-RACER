@@ -313,6 +313,9 @@ class MuJoCoFlyModel:
             # attack - the difference between where the fly is steering
             # (tilt) and its actual flight path. Tilting generates lift;
             # leveling off relative to the flight path reduces it.
+            # Gravity pulls the fly down; lift must exceed it to climb.
+            # Stall: high AoA or low speed collapses lift -> the fly sinks.
+            G = 2.0                       # effective gravity (m/s^2)
             fwd = max(np.hypot(self._fly_vel[0], self._fly_vel[2]), 1e-3)
             path_pitch = np.arctan2(self._fly_vel[1], fwd)
             cmd_pitch = np.clip(
@@ -322,8 +325,19 @@ class MuJoCoFlyModel:
             self._fly_aoa = getattr(self, '_fly_aoa', 0.0)
             self._fly_aoa += (aoa - self._fly_aoa) * 0.15
             lift = 1.5 * fwd * np.sin(self._fly_aoa)   # m/s^2 upward
+
+            # Stall: lift collapses past ~0.5 rad AoA or below ~1.5 m/s
+            stalled = (abs(self._fly_aoa) > 0.5) or (fwd < 1.5)
+            if stalled:
+                lift *= 0.15
+                self._fly_stalled = True
+            else:
+                self._fly_stalled = False
+
+            # Net vertical accel = lift - gravity (post-blend, so it
+            # persists as a real force instead of being blended away)
             self._fly_vel[1] = np.clip(
-                self._fly_vel[1] + lift * dt, -lat_max, lat_max)
+                self._fly_vel[1] + (lift - G) * dt, -lat_max, lat_max)
 
             # Update position based on velocity
             self._fly_pos = self._fly_pos + self._fly_vel * dt
@@ -338,6 +352,11 @@ class MuJoCoFlyModel:
                     scale = max_radius / radius
                     self._fly_pos[1] *= scale
                     self._fly_pos[2] *= scale
+
+                # Floor scrape: pressed against the tunnel bottom, the fly
+                # slides along it instead of jittering through the clamp
+                if self._fly_pos[1] <= -max_radius * 0.98 and self._fly_vel[1] < 0:
+                    self._fly_vel[1] = 0.0
 
                 # Keep within tunnel length (X-axis)
                 self._fly_pos[0] = np.clip(self._fly_pos[0], -self.environment.tunnel_length/2, self.environment.tunnel_length/2)

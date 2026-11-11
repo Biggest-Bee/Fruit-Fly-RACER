@@ -1197,7 +1197,8 @@ class FruitFlyRacer3D:
 
         # Update title with position and velocity
         speed = np.linalg.norm(fly_vel)
-        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}) | Speed: {speed:.1f} m/s')
+        stall = ' | STALLED' if getattr(self.fly_model, '_fly_stalled', False) else ''
+        self.ax.set_title(f'Fruit Fly Racer - Pos: ({fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}) | Speed: {speed:.1f} m/s{stall}')
 
         self.canvas.draw()
 
