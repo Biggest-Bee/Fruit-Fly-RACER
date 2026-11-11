@@ -165,9 +165,16 @@ class RacingEnvironment:
                     # Random size - bigger obstacles
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
 
+                    # Decide hole first: holed obstacles spawn near the
+                    # tunnel center so the hole is actually reachable
+                    has_hole = with_holes and random.random() < 0.5
+
                     # Generate normally at a random position in the tunnel
                     angle = random.uniform(0, 2 * math.pi)
-                    radial = random.uniform(0, self.tunnel_radius * 0.85)
+                    if has_hole:
+                        radial = random.uniform(0, self.tunnel_radius * 0.35)
+                    else:
+                        radial = random.uniform(0, self.tunnel_radius * 0.85)
 
                     # If the obstacle's extent touches the tunnel wall, it
                     # becomes wall-mounted: snap it so it merges into the wall
@@ -183,8 +190,8 @@ class RacingEnvironment:
                         'position': np.array([z_pos, vertical, lateral]),
                         'size': size,
                         'rotation': random.uniform(0, 2 * math.pi),
-                        'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
-                        'hole_size': random.uniform(0.03, 0.1) if with_holes else 0.0,  # small pinholes - mostly solid
+                        'has_hole': has_hole,  # 50% chance of hole
+                        'hole_size': random.uniform(0.03, 0.1) if has_hole else 0.0,  # small pinholes - mostly solid
                         'wall_mounted': wall_mounted
                     }
 
