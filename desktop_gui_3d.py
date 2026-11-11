@@ -1107,6 +1107,25 @@ class FruitFlyRacer3D:
                 faces = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]]
                 self._draw_polyhedron(verts, faces, 'yellow')
 
+            elif obs_type == 'bulkhead':
+                # Bulkhead wall: semi-transparent disk spanning the tunnel
+                # cross-section at pos[0]; pos[1:]=hole center, hole_size
+                # = hole radius. Yellow ring marks the passable hole.
+                Rw = self.environment.tunnel_radius * 0.98
+                th = np.linspace(0, 2 * np.pi, 48)
+                rr = np.linspace(0, Rw, 10)
+                tg, rg = np.meshgrid(th, rr)
+                xs = np.full_like(tg, pos[0])
+                ys = rg * np.cos(tg)
+                zs = rg * np.sin(tg)
+                self.ax.plot_surface(xs, ys, zs, alpha=0.35, color='gray')
+                hr = obs['hole_size']
+                ring_x = np.full_like(th, pos[0])
+                ring_y = pos[1] + hr * np.cos(th)
+                ring_z = pos[2] + hr * np.sin(th)
+                self.ax.plot(ring_x, ring_y, ring_z,
+                             color='yellow', linewidth=2)
+
             else:
                 # Fallback: big sphere
                 u = np.linspace(0, 2 * np.pi, 24)

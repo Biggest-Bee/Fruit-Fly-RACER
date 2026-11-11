@@ -39,7 +39,7 @@ class RacingEnvironment:
         self.obstacles = []
         # Obstacle types - 3D shapes: squares=cube, triangles=pyramid/tetrahedron,
         # circles=sphere, rectangles=box
-        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron']
+        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron', 'bulkhead']
         
         # Physics limits
         self.current_speed = 0.0
@@ -164,6 +164,29 @@ class RacingEnvironment:
 
                     # Random size - bigger obstacles
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
+
+                    # Bulkhead: a wall spanning the whole cross-section with
+                    # a hole - position[1:] is the hole center in Y-Z
+                    if obs_type == 'bulkhead':
+                        hole_y = hole_z = 0.0
+                        for _ in range(20):
+                            hole_y = random.uniform(-self.tunnel_radius * 0.6,
+                                                     self.tunnel_radius * 0.6)
+                            hole_z = random.uniform(-self.tunnel_radius * 0.6,
+                                                     self.tunnel_radius * 0.6)
+                            if math.hypot(hole_y, hole_z) <= self.tunnel_radius * 0.65:
+                                break
+                        obstacle = {
+                            'type': 'bulkhead',
+                            'position': np.array([z_pos, hole_y, hole_z]),
+                            'size': 0.8,                    # wall half-thickness
+                            'rotation': 0.0,
+                            'has_hole': False,
+                            'hole_size': random.uniform(0.5, 1.0),  # hole radius - fly can thread it
+                            'wall_mounted': False
+                        }
+                        self.obstacles.append(obstacle)
+                        continue
 
                     # Decide hole first: holed obstacles are biased toward
                     # the center band but never dead-center - obstacles at
@@ -324,6 +347,13 @@ class RacingEnvironment:
             mjcf += f"""
         <geom name="obstacle" type="cylinder" pos="{x} {y} {z}" size="{size} {size*2} {size}" euler="0 0 {rot}" rgba="0.8 0.4 0.4 0.8"/>
 """
+        elif obs_type == 'bulkhead':
+            # Wall spans the cross-section centered on tunnel axis;
+            # hole position stored in y/z of obstacle position
+            tr = self.tunnel_radius
+            mjcf += f"""
+        <geom name="bulkhead" type="box" pos="{x} 0 0" size="{size} {tr * 1.1} {tr * 1.1}" rgba="0.5 0.5 0.6 0.9"/>
+"""
         
         # Add hole if applicable (centered on the obstacle)
         if obstacle['has_hole']:
@@ -389,6 +419,16 @@ class RacingEnvironment:
         pos = np.array(position, dtype=float)
         for obs in self.obstacles:
             obs_pos = obs['position']
+            # Bulkhead: wall plane at obs_pos[0] spanning the cross-section;
+            # the hole (centered at obs_pos[1:]) lets the fly through
+            if obs.get('type') == 'bulkhead':
+                thick = obs.get('size', 0.8)
+                if abs(pos[0] - obs_pos[0]) < thick and \
+                        np.linalg.norm(pos[1:] - obs_pos[1:]) > obs['hole_size']:
+                    pos[0] = obs_pos[0] - thick if pos[0] < obs_pos[0] \
+                        else obs_pos[0] + thick
+                    return pos, obs
+                continue
             # Broadphase: skip obstacles far away along the tunnel
             if abs(obs_pos[0] - pos[0]) > self.collision_radius(obs) + 1.0:
                 continue
@@ -420,6 +460,17 @@ class RacingEnvironment:
             dx = ox - x
             if dx < 0.5 or dx > lookahead:
                 continue  # only obstacles ahead of the fly
+
+            # Bulkhead: attract the fly toward the hole instead of
+            # repelling - the hole is the only way through
+            if obs.get('type') == 'bulkhead':
+                hy, hz = oy, oz
+                dy, dz = hy - y, hz - z
+                d = math.hypot(dy, dz) + 1e-6
+                w = max(0.0, obs['hole_size'] + 3.0 - d)
+                steer[1] += (dy / d) * w
+                steer[2] += (dz / d) * w
+                continue
 
             dy, dz = oy - y, oz - z
             dist_yz = np.hypot(dy, dz)
@@ -468,6 +519,13 @@ class RacingEnvironment:
         for obstacle in self.obstacles:
             obs_pos = obstacle['position']
             obs_size = obstacle['size']
+
+            # Bulkhead wall: blocked unless inside the hole
+            if obstacle.get('type') == 'bulkhead':
+                if abs(x - obs_pos[0]) < obstacle.get('size', 0.8) and \
+                        np.hypot(y - obs_pos[1], z - obs_pos[2]) > obstacle['hole_size']:
+                    return True
+                continue
 
             # Only check obstacles ahead of the fly (along tunnel X-axis)
             if obs_pos[0] > x + 2.0:  # Skip obstacles behind or too close
