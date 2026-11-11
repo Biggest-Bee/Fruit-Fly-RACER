@@ -710,7 +710,7 @@ class FruitFlyRacer3D:
     def _draw_polyhedron(self, verts, faces, color):
         """Draw a solid 3D polyhedron from vertices and face index lists"""
         polys = [[verts[i] for i in face] for face in faces]
-        coll = Poly3DCollection(polys, alpha=1.0, facecolor=color,
+        coll = Poly3DCollection(polys, alpha=0.55, facecolor=color,
                                 edgecolor='black', linewidth=0.4)
         self.ax.add_collection3d(coll)
 
@@ -800,7 +800,7 @@ class FruitFlyRacer3D:
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='red')
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.55, color='red')
 
             elif obs_type == 'box':
                 # Rectangle -> solid 3D rectangular box (flat cuboid)
@@ -815,7 +815,7 @@ class FruitFlyRacer3D:
                 theta_grid_obs, x_grid_obs_cyl = np.meshgrid(theta_obs, x_obs_cyl)
                 y_grid_obs = pos[1] + size/2 * np.cos(theta_grid_obs)
                 z_grid_obs = pos[2] + size/2 * np.sin(theta_grid_obs)
-                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='lime')
+                self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=0.55, color='lime')
 
             elif obs_type == 'cube':
                 # Square -> solid 3D cube
@@ -857,7 +857,7 @@ class FruitFlyRacer3D:
                 x_obs = pos[0] + size * np.outer(np.cos(u), np.sin(v))
                 y_obs = pos[1] + size * np.outer(np.sin(u), np.sin(v))
                 z_obs = pos[2] + size * np.outer(np.ones(np.size(u)), np.cos(v))
-                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=1.0, color='purple')
+                self.ax.plot_surface(x_obs, y_obs, z_obs, alpha=0.55, color='purple')
 
         # Log obstacle count
         self.log(f"Drawn {obstacle_count} obstacles in 3D view")
