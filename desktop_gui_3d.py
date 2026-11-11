@@ -57,8 +57,25 @@ class FruitFlyRacer3D:
         self.fly_model.load_connectome()
         self.agent = AgentLogic(input_size=100)
         self.rewards = RewardSystem()
+        # Fly memory lives in the user's app-data folder so learned
+        # weights survive repo moves/reinstalls (not inside the repo)
+        memory_dir = os.path.join(
+            os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'),
+            'FruitFlyRacer')
+        os.makedirs(memory_dir, exist_ok=True)
+        checkpoint_path = os.path.join(memory_dir, 'fly_memory.pkl')
+        # One-time migration from the old repo-local checkpoint
+        old_ckpt = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                'fly_memory.pkl')
+        if not os.path.exists(checkpoint_path) and os.path.exists(old_ckpt):
+            try:
+                import shutil
+                shutil.copy2(old_ckpt, checkpoint_path)
+                print(f"Migrated fly memory to {checkpoint_path}")
+            except Exception:
+                pass
         self.sync_manager = SyncManager(
-            checkpoint_file="fly_memory.pkl",
+            checkpoint_file=checkpoint_path,
             remote_url=None
         )
 
