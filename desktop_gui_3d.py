@@ -434,8 +434,18 @@ class FruitFlyRacer3D:
                     self.root.after(0, self.update_status)
                     self.log(f"Completed {episode_count} episodes. Best: {self.best_score:.1f}")
 
-                # Regenerate obstacles for next episode (only log occasionally)
-                if episode_count % 10 == 1:
+                # Finish line: fly returns to start and a NEW course is
+                # generated for the next race
+                if result.get('finish_reached', False):
+                    try:
+                        self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                        self.update_mujoco_scene()
+                        self.log(f"New course: {len(self.environment.obstacles)} obstacles generated")
+                    except Exception as e:
+                        self.log(f"ERROR regenerating course: {e}")
+
+                # Regenerate obstacles periodically too (only log occasionally)
+                if episode_count % 10 == 1 and not result.get('finish_reached', False):
                     try:
                         self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
                         self.update_mujoco_scene()
@@ -552,8 +562,10 @@ class FruitFlyRacer3D:
                     position = new_pos
                     penalty = self.rewards.calculate_collision_penalty()
                     self.rewards.update_total_points(penalty=penalty)
-                    # Bounce: reflect forward velocity, bleed off lateral speed
-                    self.fly_model._fly_vel[0] *= -0.3
+                    # Collision response: bleed speed but KEEP moving
+                    # forward - a backward bounce could trap the fly
+                    # against obstacles and prevent finishing
+                    self.fly_model._fly_vel[0] *= 0.4
                     self.fly_model._fly_vel[1:] *= 0.4
                 
                 # Check progress
@@ -564,7 +576,11 @@ class FruitFlyRacer3D:
                 # Check if fly crossed the finish line - end episode and reset
                 if progress >= 1.0:
                     finish_reached = True
-                    self.log(f"Finish line reached! Score: {self.rewards.total_points:.1f}")
+                    # Finish bonus: all accumulated reward x10
+                    self.rewards.total_points = min(
+                        self.rewards.total_points * 10.0,
+                        self.rewards.max_points * 10.0)
+                    self.log(f"Finish line reached! Score x10: {self.rewards.total_points:.1f}")
                     break
 
                 # Step MuJoCo viewer (if available)
