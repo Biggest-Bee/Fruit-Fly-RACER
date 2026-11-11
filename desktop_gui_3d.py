@@ -411,14 +411,13 @@ class FruitFlyRacer3D:
             self.fly_model.reset()
             self.rewards.reset()
 
-            # Run until the fly reaches the finish line (large safety cap only)
-            max_steps = 20000
+            # Run until the fly reaches the finish line (no step cap)
             step = 0
             step_count = 0
             dt = 0.02
             finish_reached = False
 
-            while step < max_steps and self.simulation_running:
+            while self.simulation_running:
                 # Handle pause - wait while paused but keep GUI responsive
                 while self.simulation_paused and self.simulation_running:
                     time.sleep(0.05)
