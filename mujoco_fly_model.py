@@ -309,6 +309,22 @@ class MuJoCoFlyModel:
             self._fly_vel[1] = np.clip(self._fly_vel[1], -lat_max, lat_max)
             self._fly_vel[2] = np.clip(self._fly_vel[2], -lat_max, lat_max)
 
+            # Aerodynamic lift: upward accel proportional to the angle of
+            # attack - the difference between where the fly is steering
+            # (tilt) and its actual flight path. Tilting generates lift;
+            # leveling off relative to the flight path reduces it.
+            fwd = max(np.hypot(self._fly_vel[0], self._fly_vel[2]), 1e-3)
+            path_pitch = np.arctan2(self._fly_vel[1], fwd)
+            cmd_pitch = np.clip(
+                np.arctan2(target_vel[1], max(target_vel[0], 1e-3)),
+                -0.6, 0.6)
+            aoa = np.clip(cmd_pitch - path_pitch, -0.7, 0.7)
+            self._fly_aoa = getattr(self, '_fly_aoa', 0.0)
+            self._fly_aoa += (aoa - self._fly_aoa) * 0.15
+            lift = 1.5 * fwd * np.sin(self._fly_aoa)   # m/s^2 upward
+            self._fly_vel[1] = np.clip(
+                self._fly_vel[1] + lift * dt, -lat_max, lat_max)
+
             # Update position based on velocity
             self._fly_pos = self._fly_pos + self._fly_vel * dt
 

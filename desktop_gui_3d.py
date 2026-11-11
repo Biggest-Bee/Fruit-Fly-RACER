@@ -859,8 +859,9 @@ class FruitFlyRacer3D:
         self._fly_wing_mask = np.concatenate(wing_mask_parts)
         self._fly_wing_pivot = np.vstack(wing_pivot_parts)
         self._fly_wing_side = np.concatenate(wing_side_parts)
-        # real fly ~0.4 units -> ~0.45 m in the scene
-        self._fly_vis_scale = 0.45 / (2.0 * max_r)
+        # real fly ~0.4 units -> ~0.8 m in the scene (enlarged so it's
+        # visible in the tight chase-cam window)
+        self._fly_vis_scale = 0.8 / (2.0 * max_r)
         self._fly_base_verts *= self._fly_vis_scale
         self._fly_wing_pivot *= self._fly_vis_scale
         self._fly_render_ready = True
@@ -1092,8 +1093,9 @@ class FruitFlyRacer3D:
 
         # Set initial view angle only once - camera modes manage view afterwards
         if not getattr(self, '_view_initialized', False):
-            # roll=90 puts world +y (up) on screen top
-            self.ax.view_init(elev=20, azim=0, roll=90)
+            # vertical_axis='y': elev = height above fly, azim orbits about
+            # the up axis; azim=180 puts the camera behind the fly (+x fwd)
+            self.ax.view_init(elev=20, azim=180, vertical_axis='y')
 
         self.canvas.draw()
 
@@ -1127,8 +1129,8 @@ class FruitFlyRacer3D:
             self.ax.set_ylim(center[1] - tunnel_radius * 0.95 * zoom, center[1] + tunnel_radius * 0.95 * zoom)
             self.ax.set_zlim(center[2] - tunnel_radius * 0.95 * zoom, center[2] + tunnel_radius * 0.95 * zoom)
             if not getattr(self, '_view_initialized', False):
-                # elev=0, azim=0 looks along +x; roll=90 puts world +y (up) on screen top
-                self.ax.view_init(elev=0, azim=0, roll=90)
+                # eye-level behind the fly, looking down-tunnel (+x)
+                self.ax.view_init(elev=2, azim=180, vertical_axis='y')
                 self._view_initialized = True
         elif user_control:
             # User controls camera: center on fly + manual pan offset, keep user zoom/rotation
@@ -1139,21 +1141,18 @@ class FruitFlyRacer3D:
             self.ax.set_ylim(center[1] - half_yz, center[1] + half_yz)
             self.ax.set_zlim(center[2] - half_yz, center[2] + half_yz)
             if not getattr(self, '_view_initialized', False):
-                # roll=90 puts world +y (up) on screen top
-                self.ax.view_init(elev=10, azim=0, roll=90)
+                self.ax.view_init(elev=15, azim=180, vertical_axis='y')
                 self._view_initialized = True
         else:
-            # Chase cam: camera behind and above the fly's torso, looking
-            # down-tunnel. Window biased ahead of the fly so the course
-            # fills the view; centered on the fly vertically/laterally.
-            self.ax.set_xlim(fly_pos[0] - 6.0 * zoom, fly_pos[0] + 34.0 * zoom)
-            self.ax.set_ylim(fly_pos[1] - tunnel_radius * zoom,
-                             fly_pos[1] + tunnel_radius * zoom)
-            self.ax.set_zlim(fly_pos[2] - tunnel_radius * zoom,
-                             fly_pos[2] + tunnel_radius * zoom)
+            # Chase cam: tight window just behind/above the fly's torso,
+            # biased ahead so obstacles come into view. Camera yaw/pitch is
+            # fixed - it does NOT follow the fly's bank angle.
+            self.ax.set_xlim(fly_pos[0] - 4.0 * zoom, fly_pos[0] + 16.0 * zoom)
+            self.ax.set_ylim(fly_pos[1] - 5.0 * zoom, fly_pos[1] + 5.0 * zoom)
+            self.ax.set_zlim(fly_pos[2] - 5.0 * zoom, fly_pos[2] + 5.0 * zoom)
             if not getattr(self, '_view_initialized', False):
-                # elev tilts camera above the fly; roll=90 keeps +y up
-                self.ax.view_init(elev=18, azim=0, roll=90)
+                # elev=20: camera above the torso, behind the fly
+                self.ax.view_init(elev=20, azim=180, vertical_axis='y')
                 self._view_initialized = True
 
         # Draw the real official flybody model (all geoms: body, eyes,
@@ -1235,7 +1234,7 @@ class FruitFlyRacer3D:
 
         # Clamp: can't zoom out beyond whole tunnel, can't zoom in too close
         max_zoom_out = max(tunnel_length / 40.0, tunnel_radius / 10.0)
-        self._zoom_factor = float(np.clip(self._zoom_factor, 0.15, max_zoom_out))
+        self._zoom_factor = float(np.clip(self._zoom_factor, 0.08, max_zoom_out))
 
         # Mark that user took camera control so follow-mode doesn't fight us
         self._user_moved_camera = True
@@ -1266,8 +1265,11 @@ class FruitFlyRacer3D:
         new_elev = np.clip(elev + dy * 0.5, -90, 90)
         new_azim = azim - dx * 0.5
 
-        # preserve roll so +y stays screen-up (fly doesn't go sideways)
-        kw = {'roll': self.ax.roll} if hasattr(self.ax, 'roll') else {}
+        # preserve vertical_axis='y' so +y stays screen-up and elev/azim
+        # behave like a normal chase camera; keep user's roll if any
+        kw = {'vertical_axis': 'y'}
+        if hasattr(self.ax, 'roll') and self.ax.roll:
+            kw['roll'] = self.ax.roll
         self.ax.view_init(elev=new_elev, azim=new_azim, **kw)
         self._user_moved_camera = True
 
