@@ -492,6 +492,7 @@ class FruitFlyRacer3D:
             self.fly_model.reset()
             self.rewards.reset()
             self.brain.reset_episode()
+            self._ground_hit = False
 
             # Run until the fly reaches the finish line (no step cap)
             step = 0
@@ -596,7 +597,22 @@ class FruitFlyRacer3D:
                     # against obstacles and prevent finishing
                     self.fly_model._fly_vel[0] *= 0.4
                     self.fly_model._fly_vel[1:] *= 0.4
-                
+
+                # Ground strike: touching the tunnel floor (usually after
+                # a stall) costs a heavy penalty - once per contact
+                floor_y = -self.environment.tunnel_radius * 0.8 * 0.99
+                if position[1] <= floor_y:
+                    if not getattr(self, '_ground_hit', False):
+                        self._ground_hit = True
+                        penalty = self.rewards.calculate_crash_penalty()
+                        self.rewards.update_total_points(penalty=penalty)
+                        stalled = ' (STALLED)' if getattr(
+                            self.fly_model, '_fly_stalled', False) else ''
+                        self.log(f"CRASH: hit the ground{stalled}! "
+                                 f"Penalty {penalty:.0f}")
+                elif position[1] > floor_y + 0.5:
+                    self._ground_hit = False
+
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
                 reward = self.rewards.calculate_progress_reward(progress)
@@ -946,16 +962,9 @@ class FruitFlyRacer3D:
             u = np.cross(r, f)                      # dorsal axis
             u /= np.linalg.norm(u)
 
-            # bank: roll about forward axis proportional to yaw rate
-            heading = np.arctan2(f[2], f[0])
-            prev = getattr(self, '_fly_heading', heading)
-            dyaw = (heading - prev + np.pi) % (2 * np.pi) - np.pi
-            self._fly_heading = heading
-            yaw_rate = dyaw / max(dt, 1e-3)
-            bank_t = float(np.clip(yaw_rate * 0.35, -0.6, 0.6))
-            bank = getattr(self, '_fly_bank', 0.0)
-            bank += (bank_t - bank) * min(1.0, dt * 8.0)
-            self._fly_bank = bank
+            # bank angle comes from the physics model (yaw-rate estimate)
+            # so the visual roll always matches the aerodynamic state
+            bank = getattr(self.fly_model, '_fly_bank', 0.0)
             cb, sb = np.cos(bank), np.sin(bank)
             # rotate u,r about f: u' = u*cb + (f x u)*sb ; f x u = r
             u2 = u * cb + r * sb

@@ -318,6 +318,19 @@ class MuJoCoFlyModel:
             G = 2.0                       # effective gravity (m/s^2)
             fwd = max(np.hypot(self._fly_vel[0], self._fly_vel[2]), 1e-3)
             path_pitch = np.arctan2(self._fly_vel[1], fwd)
+
+            # Bank angle from yaw rate - shared with the renderer and the
+            # stall model. Steep bank tilts lift sideways: less vertical
+            # lift -> the fly sinks in hard turns like a real aircraft.
+            heading = np.arctan2(self._fly_vel[2], self._fly_vel[0])
+            prev_h = getattr(self, '_fly_heading', heading)
+            dyaw = (heading - prev_h + np.pi) % (2 * np.pi) - np.pi
+            self._fly_heading = heading
+            yaw_rate = dyaw / max(dt, 1e-3)
+            bank_t = float(np.clip(yaw_rate * 0.35, -0.6, 0.6))
+            self._fly_bank = getattr(self, '_fly_bank', 0.0)
+            self._fly_bank += (bank_t - self._fly_bank) * min(1.0, dt * 8.0)
+
             cmd_pitch = np.clip(
                 np.arctan2(target_vel[1], max(target_vel[0], 1e-3)),
                 -0.6, 0.6)
@@ -326,18 +339,30 @@ class MuJoCoFlyModel:
             self._fly_aoa += (aoa - self._fly_aoa) * 0.15
             lift = 1.5 * fwd * np.sin(self._fly_aoa)   # m/s^2 upward
 
-            # Stall: lift collapses past ~0.5 rad AoA or below ~1.5 m/s
-            stalled = (abs(self._fly_aoa) > 0.5) or (fwd < 1.5)
+            # Stall: lift collapses when the wing is over-angled, the fly
+            # is too slow, the flight path is excessively nose-high, or a
+            # steep bank at low speed overloads the wing
+            stalled = ((abs(self._fly_aoa) > 0.5)
+                       or (fwd < 1.5)
+                       or (abs(path_pitch) > 0.6 and fwd < 3.0)
+                       or (abs(self._fly_bank) > 0.9 and fwd < 2.5))
             if stalled:
                 lift *= 0.15
                 self._fly_stalled = True
             else:
                 self._fly_stalled = False
 
-            # Net vertical accel = lift - gravity (post-blend, so it
-            # persists as a real force instead of being blended away)
+            # Net vertical accel = lift*cos(bank) - gravity. Bank reduces
+            # the vertical component of lift, so hard turns sink.
+            lift_vertical = lift * np.cos(self._fly_bank)
             self._fly_vel[1] = np.clip(
-                self._fly_vel[1] + (lift - G) * dt, -lat_max, lat_max)
+                self._fly_vel[1] + (lift_vertical - G) * dt,
+                -lat_max, lat_max)
+
+            # Stalled controls are mushy: the fly can't hold a climb -
+            # cap upward velocity so it mushes over and drops
+            if self._fly_stalled:
+                self._fly_vel[1] = min(self._fly_vel[1], 1.0)
 
             # Update position based on velocity
             self._fly_pos = self._fly_pos + self._fly_vel * dt

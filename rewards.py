@@ -19,9 +19,11 @@ class RewardSystem:
         self.total_points = 0.0
         self.max_points = 1000.0
         self.penalty_per_collision = -50.0
+        self.crash_penalty = -200.0   # ground strike (usually after a stall)
         self.progress_reward_multiplier = 100.0
         
         self.collision_count = 0
+        self.crash_count = 0
         self.best_progress = 0.0
         
         print("Reward System initialized")
@@ -57,6 +59,16 @@ class RewardSystem:
         self.collision_count += 1
         return self.penalty_per_collision
     
+    def calculate_crash_penalty(self) -> float:
+        """
+        Calculate penalty for hitting the ground (e.g. after a stall)
+        
+        Returns:
+            Penalty value
+        """
+        self.crash_count += 1
+        return self.crash_penalty
+    
     def update_total_points(self, reward: float = 0.0, penalty: float = 0.0):
         """
         Update total points with reward and penalty
@@ -86,6 +98,7 @@ class RewardSystem:
         """Reset reward system for new simulation"""
         self.total_points = 0.0
         self.collision_count = 0
+        self.crash_count = 0
         self.best_progress = 0.0
         # Only print on first reset
         if not hasattr(self, '_reset_count'):
