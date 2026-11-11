@@ -151,16 +151,15 @@ class RacingEnvironment:
                     # Random size - bigger obstacles
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
 
-                    # ~30% of obstacles merge with / embed into the tunnel wall
-                    wall_mounted = random.random() < 0.3
+                    # Generate normally at a random position in the tunnel
                     angle = random.uniform(0, 2 * math.pi)
+                    radial = random.uniform(0, self.tunnel_radius * 0.85)
+
+                    # If the obstacle's extent touches the tunnel wall, it
+                    # becomes wall-mounted: snap it so it merges into the wall
+                    wall_mounted = (radial + size) >= self.tunnel_radius
                     if wall_mounted:
-                        # Center close to wall so obstacle protrudes inward and
-                        # its outer edge sinks into the cylinder wall
                         radial = self.tunnel_radius - size * random.uniform(0.3, 0.5)
-                    else:
-                        # Freestanding obstacle well inside the tunnel
-                        radial = random.uniform(0, self.tunnel_radius * 0.4)
                     lateral = radial * math.cos(angle)   # -> position[2]
                     vertical = radial * math.sin(angle)  # -> position[1]
 

@@ -411,8 +411,8 @@ class FruitFlyRacer3D:
             self.fly_model.reset()
             self.rewards.reset()
 
-            # Run for max steps
-            max_steps = 1000
+            # Run until the fly reaches the finish line (large safety cap only)
+            max_steps = 20000
             step = 0
             step_count = 0
             dt = 0.02
@@ -462,11 +462,12 @@ class FruitFlyRacer3D:
                     position = self.fly_model.get_position()
                     velocity = self.fly_model.get_velocity()
                 
-                # Check collision
+                # Check collision - penalty only, race continues until finish
                 if self.environment.check_collision(position):
                     penalty = self.rewards.calculate_collision_penalty()
                     self.rewards.update_total_points(penalty=penalty)
-                    break
+                    # Brief slowdown on collision so it feels impactful
+                    self.fly_model._fly_vel *= 0.5
                 
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
