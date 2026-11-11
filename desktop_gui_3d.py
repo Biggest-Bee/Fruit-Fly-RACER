@@ -1229,15 +1229,7 @@ class FruitFlyRacer3D:
         # antennae, legs, wings) instead of a proxy shape
         self._draw_flybody(fly_pos, fly_vel)
 
-        # Draw velocity vector (direction of flight)
-        if np.linalg.norm(fly_vel) > 0.1:
-            vel_scale = 2.0  # Scale velocity vector
-            vel_end = fly_pos + fly_vel * vel_scale
-            vel_line, = self.ax.plot([fly_pos[0], vel_end[0]],
-                                   [fly_pos[1], vel_end[1]],
-                                   [fly_pos[2], vel_end[2]],
-                                   color='yellow', linewidth=3, label='Velocity')
-            vel_line._is_fly = True
+        # (velocity vector removed for clean view)
 
         # (title removed for clean view - stall state is in fly_model._fly_stalled)
 
