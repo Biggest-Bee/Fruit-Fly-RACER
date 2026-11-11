@@ -241,6 +241,33 @@ class RacingEnvironment:
             import traceback
             errors.append(traceback.format_exc())
 
+        # Bulkhead pairs: ~35% of bulkheads get a second wall a few meters
+        # ahead/behind with a different hole position - double-gate sections
+        for obs in list(self.obstacles):
+            if obs.get('type') != 'bulkhead' or random.random() > 0.35:
+                continue
+            off = random.choice([-1.0, 1.0]) * random.uniform(4.0, 10.0)
+            nx = obs['position'][0] + off
+            if abs(nx) > self.tunnel_length / 2 - 15:
+                continue
+            hy = hz = 0.0
+            for _ in range(20):
+                hy = random.uniform(-self.tunnel_radius * 0.6,
+                                     self.tunnel_radius * 0.6)
+                hz = random.uniform(-self.tunnel_radius * 0.6,
+                                     self.tunnel_radius * 0.6)
+                if math.hypot(hy, hz) <= self.tunnel_radius * 0.65:
+                    break
+            self.obstacles.append({
+                'type': 'bulkhead',
+                'position': np.array([nx, hy, hz]),
+                'size': 0.8,
+                'rotation': 0.0,
+                'has_hole': False,
+                'hole_size': random.uniform(0.5, 1.0),
+                'wall_mounted': False
+            })
+
         # Count obstacles with holes
         hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
 
@@ -425,8 +452,10 @@ class RacingEnvironment:
                 thick = obs.get('size', 0.8)
                 if abs(pos[0] - obs_pos[0]) < thick and \
                         np.linalg.norm(pos[1:] - obs_pos[1:]) > obs['hole_size']:
-                    pos[0] = obs_pos[0] - thick if pos[0] < obs_pos[0] \
-                        else obs_pos[0] + thick
+                    # push fully OUTSIDE the slab (boundary would re-admit
+                    # the fly next frame - that was the fly-through bug)
+                    pos[0] = (obs_pos[0] - thick - 0.3 if pos[0] < obs_pos[0]
+                              else obs_pos[0] + thick + 0.3)
                     return pos, obs
                 continue
             # Broadphase: skip obstacles far away along the tunnel
