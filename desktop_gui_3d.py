@@ -1466,6 +1466,13 @@ class FruitFlyRacer3D:
         self.best_score_label.config(text=f"Best Score: {self.best_score:.1f}")
         self.best_progress_label.config(text=f"Best Progress: {self.best_progress*100:.2f}%")
 
+        # Live status text: shows current episode so finishing a race is
+        # visible immediately (runs every episode now)
+        if self.simulation_running and not self.simulation_paused:
+            self.status_label.config(
+                text=f"Running - Episode {self.current_simulation}",
+                foreground="green")
+
         # Update best time display
         if self.best_time != float('inf'):
             self.best_time_label.config(text=f"Best Time: {self.best_time:.2f}s")
