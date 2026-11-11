@@ -445,9 +445,12 @@ class FruitFlyRacer3D:
                 elif episode_count % 20 == 0:
                     self._save_checkpoint()  # periodic save anyway
 
+                # Update status labels after EVERY episode so finishing a
+                # race immediately reflects in the status area
+                self.root.after(0, self.update_status)
+
                 # Update GUI every 10 episodes
                 if episode_count % 10 == 0:
-                    self.root.after(0, self.update_status)
                     self.log(f"Completed {episode_count} episodes. Best: {self.best_score:.1f}")
 
                 # Finish line: fly returns to start and a NEW course is
@@ -1189,6 +1192,18 @@ class FruitFlyRacer3D:
                 # elev=25: camera above the torso, behind the fly
                 self.ax.view_init(elev=25, azim=270, vertical_axis='y')
                 self._view_initialized = True
+
+        # Zoom-level indicator (top-right corner) - temporary debug aid to
+        # correlate the obstacle color-flash artifact with zoom distance
+        if not hasattr(self, '_zoom_text'):
+            self._zoom_text = self.ax.text(
+                0.98, 0.95, '', transform=self.ax.transAxes,
+                ha='right', va='top', fontsize=9, color='white',
+                bbox=dict(facecolor='black', alpha=0.5, pad=2))
+        win_x = 14.0 * zoom
+        win_yz = 7.0 * zoom
+        self._zoom_text.set_text(
+            f'Zoom {zoom:.2f}x | view {win_x:.1f}x{win_yz:.1f}m')
 
         # Draw the real official flybody model (all geoms: body, eyes,
         # antennae, legs, wings) instead of a proxy shape
