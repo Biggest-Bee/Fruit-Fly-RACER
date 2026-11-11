@@ -364,6 +364,18 @@ class MuJoCoFlyModel:
             if self._fly_stalled:
                 self._fly_vel[1] = min(self._fly_vel[1], 1.0)
 
+            # Induced drag: turning, tilting, and banking all increase
+            # drag and bleed forward speed (load factor ~ n^2 like a
+            # real aircraft). Hard maneuvering scrubs speed; diving or
+            # flying straight rebuilds it.
+            load = (1.0
+                    + 2.0 * self._fly_bank ** 2
+                    + (self._fly_aoa / 0.5) ** 2
+                    + min(abs(yaw_rate) * 0.3, 1.5) ** 2)
+            drag = 0.18 * load * dt          # fractional speed loss
+            self._fly_vel[0] *= (1.0 - drag)
+            self._fly_vel[2] *= (1.0 - drag)
+
             # Update position based on velocity
             self._fly_pos = self._fly_pos + self._fly_vel * dt
 
