@@ -287,8 +287,9 @@ class MuJoCoFlyModel:
         # Direct position/velocity control (simple approach)
         if desired_velocity is not None:
             # Get current position (use internal tracking, not MuJoCo)
-            if not hasattr(self, '_fly_pos'):
-                self._fly_pos = np.array([0.0, 0.0, -self.environment.tunnel_length/2 + 5])  # Start inside tunnel
+            # position = [x=tunnel direction, y=vertical, z=lateral]
+            if not hasattr(self, '_fly_pos') or self._fly_pos is None:
+                self._fly_pos = self._start_position()
                 self._fly_vel = np.array([0.0, 0.0, 0.0])
 
             # Update velocity towards desired velocity
@@ -306,7 +307,7 @@ class MuJoCoFlyModel:
 
             # Apply position constraints (keep inside tunnel)
             if self.environment is not None:
-                # Keep within tunnel radius (Y-Z plane for horizontal tunnel)
+                # Keep within tunnel radius (Y-Z cross-section)
                 y, z = self._fly_pos[1], self._fly_pos[2]
                 radius = np.sqrt(y**2 + z**2)
                 max_radius = self.environment.tunnel_radius * 0.8
@@ -320,6 +321,12 @@ class MuJoCoFlyModel:
 
             # Update MuJoCo data for visualization
             self._update_mujoco_position()
+
+    def _start_position(self):
+        """Get the fly's start position at the beginning of the tunnel"""
+        if self.environment is not None:
+            return np.array([-self.environment.tunnel_length / 2 + 5.0, 0.0, 0.0])
+        return np.array([0.0, 0.0, 0.0])
 
     def _update_mujoco_position(self):
         """Update MuJoCo model position for visualization"""
@@ -356,9 +363,17 @@ class MuJoCoFlyModel:
         self._fly_vel = vel.copy()
     
     def reset(self):
-        """Reset the simulation to initial state"""
-        if self.data is not None:
+        """Reset the simulation to initial state - fly returns to start line"""
+        if self.data is not None and self.model is not None:
             mujoco.mj_resetData(self.model, self.data)
+        # Reset internal flight state so fly starts at the beginning of the tunnel
+        self._fly_pos = self._start_position()
+        self._fly_vel = np.array([0.0, 0.0, 0.0])
+        self.current_speed = 0.0
+        self.current_acceleration = np.array([0.0, 0.0, 0.0])
+        self.angular_velocity = np.array([0.0, 0.0, 0.0])
+        self.orientation = np.array([0.0, 0.0, 0.0])
+        self._update_mujoco_position()
     
     def get_position(self) -> np.ndarray:
         """Get current fly position"""

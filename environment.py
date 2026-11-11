@@ -61,10 +61,10 @@ class RacingEnvironment:
         self.current_velocity = np.array([0.0, 0.0, 0.0])
         self.current_altitude = 0.0
         self.current_direction = np.array([0.0, 0.0, 1.0])
-        self.current_position = np.array([0.0, 0.0, -self.tunnel_length / 2])
+        self.current_position = np.array([-self.tunnel_length / 2, 0.0, 0.0])
 
-        # Clear obstacles (will be regenerated)
-        self.obstacles = []
+        # NOTE: obstacles are intentionally NOT cleared here - they persist
+        # across episodes and are regenerated periodically by the simulation loop
 
         # Only print on first reset
         if not hasattr(self, '_reset_count'):
@@ -147,24 +147,25 @@ class RacingEnvironment:
                     # Random obstacle type
                     obs_type = random.choice(self.obstacle_types)
 
-                    # Random position within tunnel - ensure inside cylinder
+                    # Random position within tunnel cross-section - ensure inside cylinder
+                    # position = [x=tunnel direction, y=vertical, z=lateral]
                     angle = random.uniform(0, 2 * math.pi)
-                    # Keep obstacles well inside tunnel radius (80% of radius)
-                    radius = random.uniform(0, self.tunnel_radius * 0.7)
-                    x = radius * math.cos(angle)
-                    y = radius * math.sin(angle)
+                    # Keep obstacles well inside tunnel radius
+                    radius = random.uniform(0, self.tunnel_radius * 0.6)
+                    lateral = radius * math.cos(angle)   # -> position[2]
+                    vertical = radius * math.sin(angle)  # -> position[1]
 
-                    # Random size - keep small enough to fit inside
-                    size = random.uniform(0.5, min(2.0, self.tunnel_radius * 0.3))
+                    # Random size - bigger obstacles
+                    size = random.uniform(1.5, min(4.0, self.tunnel_radius * 0.4))
 
-                    # Generate obstacle
+                    # Generate obstacle - position stored as [tunnel_x, vertical_y, lateral_z]
                     obstacle = {
                         'type': obs_type,
-                        'position': np.array([x, y, z_pos]),
+                        'position': np.array([z_pos, vertical, lateral]),
                         'size': size,
                         'rotation': random.uniform(0, 2 * math.pi),
                         'has_hole': with_holes and random.random() < 0.5,  # 50% chance of hole
-                        'hole_size': random.uniform(0.2, 0.5) if with_holes else 0.0
+                        'hole_size': random.uniform(0.1, 0.3) if with_holes else 0.0  # smaller holes
                     }
 
                     # Validate obstacle
@@ -221,15 +222,14 @@ class RacingEnvironment:
                     return False
 
             # Check position is within tunnel
+            # position = [x=tunnel direction, y=vertical, z=lateral]
             pos = obstacle['position']
-            if abs(pos[0]) > self.tunnel_radius * 0.9:
-                print(f"Obstacle X position out of bounds: {pos[0]}")
+            if abs(pos[0]) > self.tunnel_length / 2:
+                print(f"Obstacle tunnel position out of bounds: {pos[0]}")
                 return False
-            if abs(pos[1]) > self.tunnel_radius * 0.9:
-                print(f"Obstacle Y position out of bounds: {pos[1]}")
-                return False
-            if abs(pos[2]) > self.tunnel_length / 2:
-                print(f"Obstacle Z position out of bounds: {pos[2]}")
+            cross_section_radius = np.sqrt(pos[1]**2 + pos[2]**2)
+            if cross_section_radius > self.tunnel_radius * 0.9:
+                print(f"Obstacle cross-section position out of bounds: {cross_section_radius}")
                 return False
 
             # Check size is reasonable
@@ -237,8 +237,8 @@ class RacingEnvironment:
                 print(f"Obstacle size out of range: {obstacle['size']}")
                 return False
 
-            # Check hole size is reasonable
-            if obstacle['has_hole'] and (obstacle['hole_size'] < 0.1 or obstacle['hole_size'] > 1.0):
+            # Check hole size is reasonable (smaller holes)
+            if obstacle['has_hole'] and (obstacle['hole_size'] < 0.05 or obstacle['hole_size'] > 0.4):
                 print(f"Hole size out of range: {obstacle['hole_size']}")
                 return False
 
@@ -258,6 +258,7 @@ class RacingEnvironment:
         Returns:
             MuJoCo XML string for the obstacle
         """
+        # position = [x=tunnel direction, y=vertical, z=lateral]
         x, y, z = obstacle['position']
         size = obstacle['size']
         rot = obstacle['rotation']
@@ -293,9 +294,9 @@ class RacingEnvironment:
         # Add hole if applicable
         if obstacle['has_hole']:
             hole_size = obstacle['hole_size']
-            hole_x = x + hole_size * 0.5
+            hole_z = z + hole_size * 0.5
             mjcf += f"""
-        <geom name="hole" type="sphere" pos="{hole_x} {y} {z}" size="{hole_size}" rgba="0.0 0.0 0.0 0.0"/>
+        <geom name="hole" type="sphere" pos="{x} {y} {hole_z}" size="{hole_size}" rgba="0.0 0.0 0.0 0.0"/>
 """
         
         return mjcf
@@ -338,33 +339,34 @@ class RacingEnvironment:
         Returns:
             True if collision detected
         """
+        # position = [x=tunnel direction, y=vertical, z=lateral]
         x, y, z = position
-        
-        # Check tunnel walls
-        if np.sqrt(x**2 + y**2) > self.tunnel_radius:
+
+        # Check tunnel walls (radial distance in Y-Z cross-section)
+        if np.sqrt(y**2 + z**2) > self.tunnel_radius:
             return True
-        
+
         # Check obstacles (more lenient collision detection)
         for obstacle in self.obstacles:
             obs_pos = obstacle['position']
             obs_size = obstacle['size']
 
-            # Only check obstacles ahead of the fly
-            if obs_pos[2] > z + 2.0:  # Skip obstacles behind or too close
+            # Only check obstacles ahead of the fly (along tunnel X-axis)
+            if obs_pos[0] > x + 2.0:  # Skip obstacles behind or too close
                 continue
 
             # Simple distance-based collision (less aggressive)
             distance = np.linalg.norm(position - obs_pos)
             if distance < obs_size * 0.5:  # Reduced collision radius
 
-                # Check if hole (pass through)
+                # Check if hole (pass through) - hole offset along lateral axis
                 if obstacle['has_hole']:
-                    hole_pos = obs_pos + np.array([obstacle['hole_size'] * 0.5, 0, 0])
+                    hole_pos = obs_pos + np.array([0.0, 0.0, obstacle['hole_size'] * 0.5])
                     if np.linalg.norm(position - hole_pos) < obstacle['hole_size']:
                         return False  # Pass through hole
                 else:
                     return True  # Collision
-        
+
         return False
     
     def get_progress_to_finish(self, position: np.ndarray) -> float:

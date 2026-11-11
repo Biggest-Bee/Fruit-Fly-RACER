@@ -39,6 +39,7 @@ class FruitFlyRacer3D:
         
         # Simulation state
         self.simulation_running = False
+        self.simulation_paused = False
         self.simulation_thread = None
         self.current_simulation = 0
         self.num_simulations = 1000000
@@ -67,6 +68,13 @@ class FruitFlyRacer3D:
         self.camera_target = np.array([0.0, 0.0, 0.0])
         self.camera_distance = 10.0
         self.camera_height = 5.0
+
+        # Camera control state
+        self._user_moved_camera = False
+        self._zoom_factor = 1.0
+        self._cam_offset = np.array([0.0, 0.0, 0.0])
+        self._view_initialized = False
+        self._keys_down = set()
 
         # Best time tracking
         self.best_time = float('inf')
@@ -125,6 +133,9 @@ class FruitFlyRacer3D:
 
         self.stop_btn = ttk.Button(left_frame, text="Stop Simulation", command=self.stop_simulation, state=tk.DISABLED)
         self.stop_btn.pack(fill=tk.X, pady=5)
+
+        self.pause_btn = ttk.Button(left_frame, text="Pause Simulation", command=self.pause_simulation, state=tk.DISABLED)
+        self.pause_btn.pack(fill=tk.X, pady=5)
 
         # Spectator mode toggle
         self.spectator_var = tk.BooleanVar(value=False)
@@ -185,6 +196,10 @@ class FruitFlyRacer3D:
         self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
         self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
 
+        # WASD camera movement keys
+        self.root.bind('<KeyPress>', self.on_key_press)
+        self.root.bind('<KeyRelease>', self.on_key_release)
+
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -217,12 +232,20 @@ class FruitFlyRacer3D:
             return
         
         self.simulation_running = True
+        self.simulation_paused = False
         self.current_simulation = 0
         self.best_score = 0.0
         self.best_progress = 0.0
+
+        # Reset camera state
+        self._user_moved_camera = False
+        self._zoom_factor = 1.0
+        self._cam_offset = np.array([0.0, 0.0, 0.0])
+        self._view_initialized = False
         
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
+        self.pause_btn.config(state=tk.NORMAL, text="Pause Simulation")
         self.status_label.config(text="Running", foreground="green")
         
         self.log(f"Starting simulation: {self.num_simulations} runs")
@@ -234,11 +257,31 @@ class FruitFlyRacer3D:
     def stop_simulation(self):
         """Stop the simulation"""
         self.simulation_running = False
+        self.simulation_paused = False
         self.viewer_running = False
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
+        self.pause_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Stopped", foreground="orange")
         self.log("Simulation stopped by user")
+
+    def pause_simulation(self):
+        """Pause/resume the simulation - camera controls stay active while paused"""
+        self.simulation_paused = not self.simulation_paused
+        if self.simulation_paused:
+            self.pause_btn.config(text="Resume Simulation")
+            self.status_label.config(text="Paused", foreground="orange")
+            self.log("=== SIMULATION PAUSED ===")
+            self.log("You can now move the camera:")
+            self.log("  - Drag mouse: rotate view")
+            self.log("  - Scroll: zoom in/out")
+            self.log("  - WASD: move camera position")
+            self.log("Click 'Resume Simulation' to continue")
+            self.log("=========================")
+        else:
+            self.pause_btn.config(text="Pause Simulation")
+            self.status_label.config(text="Running", foreground="green")
+            self.log("=== SIMULATION RESUMED ===")
     
     def run_simulation(self):
         """Run the simulation loop"""
@@ -350,8 +393,9 @@ class FruitFlyRacer3D:
     def run_single_episode(self):
         """Run a single simulation episode"""
         try:
-            # Reset environment (only log occasionally)
+            # Reset environment and fly model - fly returns to start line
             self.environment.reset()
+            self.fly_model.reset()
             self.rewards.reset()
 
             # Run for max steps
@@ -359,8 +403,15 @@ class FruitFlyRacer3D:
             step = 0
             step_count = 0
             dt = 0.02
+            finish_reached = False
 
             while step < max_steps and self.simulation_running:
+                # Handle pause - wait while paused but keep GUI responsive
+                while self.simulation_paused and self.simulation_running:
+                    time.sleep(0.05)
+                if not self.simulation_running:
+                    break
+
                 step += 1
                 step_count += 1
 
@@ -408,7 +459,13 @@ class FruitFlyRacer3D:
                 progress = self.environment.get_progress_to_finish(position)
                 reward = self.rewards.calculate_progress_reward(progress)
                 self.rewards.update_total_points(reward=reward)
-                
+
+                # Check if fly crossed the finish line - end episode and reset
+                if progress >= 1.0:
+                    finish_reached = True
+                    self.log(f"Finish line reached! Score: {self.rewards.total_points:.1f}")
+                    break
+
                 # Step MuJoCo viewer (if available)
                 if self.viewer is not None:
                     try:
@@ -419,12 +476,13 @@ class FruitFlyRacer3D:
             return {
                 'score': self.rewards.total_points,
                 'progress': self.rewards.best_progress,
-                'collisions': self.rewards.collision_count
+                'collisions': self.rewards.collision_count,
+                'finish_reached': finish_reached
             }
-            
+
         except Exception as e:
             self.log(f"Error in episode: {e}")
-            return {'score': 0.0, 'progress': 0.0, 'collisions': 0}
+            return {'score': 0.0, 'progress': 0.0, 'collisions': 0, 'finish_reached': False}
     
     def create_mujoco_scene(self):
         """Create MuJoCo scene with tunnel and obstacles"""
@@ -434,10 +492,19 @@ class FruitFlyRacer3D:
         pass
     
     def update_mujoco_scene(self):
-        """Update 3D scene with new obstacles"""
-        # Redraw tunnel and obstacles
-        self.draw_tunnel()
-        self.log(f"Updated 3D scene with {len(self.environment.obstacles)} obstacles")
+        """Update 3D scene with new obstacles - marshalled to Tkinter main thread"""
+        # Matplotlib is NOT thread-safe - must run on the main thread
+        self.root.after(0, self._draw_scene_main_thread)
+
+    def _draw_scene_main_thread(self):
+        """Draw tunnel/obstacles on the Tkinter main thread"""
+        try:
+            self.draw_tunnel()
+            self.log(f"Updated 3D scene with {len(self.environment.obstacles)} obstacles")
+        except Exception as e:
+            self.log(f"ERROR drawing 3D scene: {e}")
+            import traceback
+            self.log(f"Traceback: {traceback.format_exc()}")
     
     def start_mujoco_viewer(self):
         """Start 3D visualization using matplotlib"""
@@ -505,13 +572,10 @@ class FruitFlyRacer3D:
         self.ax.plot_surface(x_cap_finish.reshape(1, -1), y_cap.reshape(1, -1), z_cap.reshape(1, -1),
                            alpha=1.0, color='darkblue')
 
-        # Draw obstacles as different shapes - convert from z-direction to x-direction
+        # Draw obstacles - position is already [x=tunnel, y=vertical, z=lateral]
         obstacle_count = 0
         for i, obs in enumerate(self.environment.obstacles):
-            # Convert obstacle position: [x, y, z] -> [z, y, x] (tunnel is along X now)
-            # Original: x=lateral, y=vertical, z=tunnel direction
-            # New: x=tunnel direction, y=vertical, z=lateral
-            pos = np.array([obs['position'][2], obs['position'][1], obs['position'][0]])
+            pos = obs['position']
             size = obs['size']
             obs_type = obs.get('type', 'sphere')
             obstacle_count += 1
@@ -666,38 +730,39 @@ class FruitFlyRacer3D:
             if hasattr(collection, '_is_fly'):
                 collection.remove()
 
-        # Get fly position and orientation
-        # Convert from z-direction to x-direction (tunnel is now horizontal)
-        fly_pos_z = self.fly_model.get_position()
-        fly_vel_z = self.fly_model.get_velocity()
+        # Get fly position and velocity - already in display coords [x=tunnel, y=vertical, z=lateral]
+        fly_pos = self.fly_model.get_position()
+        fly_vel = self.fly_model.get_velocity()
 
-        # Convert coordinates: z -> x, y -> y, x -> z
-        # Original: x=lateral, y=vertical, z=tunnel direction
-        # New: x=tunnel direction, y=vertical, z=lateral
-        fly_pos = np.array([fly_pos_z[2], fly_pos_z[1], fly_pos_z[0]])
-        fly_vel = np.array([fly_vel_z[2], fly_vel_z[1], fly_vel_z[0]])
+        # Update camera limits - only auto-follow when user isn't controlling camera
+        tunnel_length = self.environment.tunnel_length
+        tunnel_radius = self.environment.tunnel_radius
 
-        # Update camera to follow fly if not in spectator mode
-        if not self.spectator_mode:
-            # Center view on fly position - start inside tunnel
-            tunnel_length = self.environment.tunnel_length
-            tunnel_radius = self.environment.tunnel_radius
+        user_control = self.spectator_mode or self.simulation_paused or getattr(self, '_user_moved_camera', False)
 
-            # Start camera inside tunnel at beginning
-            if not hasattr(self, '_camera_initialized'):
-                self._camera_initialized = True
-                # Start at beginning of tunnel, inside
-                start_x = -tunnel_length/2 + 5  # 5m from start
-                self.ax.set_xlim(start_x - 20, start_x + 20)  # Show 40m ahead
-                self.ax.set_ylim(-tunnel_radius, tunnel_radius)
-                self.ax.set_zlim(-tunnel_radius, tunnel_radius)
-                self.ax.view_init(elev=10, azim=0)  # Slight downward angle, looking forward
-            else:
-                # Follow fly position
-                self.ax.set_xlim(fly_pos[0] - 20, fly_pos[0] + 20)
-                self.ax.set_ylim(-tunnel_radius, tunnel_radius)
-                self.ax.set_zlim(-tunnel_radius, tunnel_radius)
+        if user_control:
+            # User controls camera: center on fly + manual pan offset, keep user zoom/rotation
+            center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
+            zoom = getattr(self, '_zoom_factor', 1.0)
+            half_x = 20.0 * zoom
+            half_yz = tunnel_radius * zoom
+            self.ax.set_xlim(center[0] - half_x, center[0] + half_x)
+            self.ax.set_ylim(center[1] - half_yz, center[1] + half_yz)
+            self.ax.set_zlim(center[2] - half_yz, center[2] + half_yz)
+            if not getattr(self, '_view_initialized', False):
                 self.ax.view_init(elev=10, azim=0)
+                self._view_initialized = True
+        else:
+            # Auto-follow: center view on fly
+            zoom = getattr(self, '_zoom_factor', 1.0)
+            half_x = 20.0 * zoom
+            half_yz = tunnel_radius * zoom
+            self.ax.set_xlim(fly_pos[0] - half_x, fly_pos[0] + half_x)
+            self.ax.set_ylim(-half_yz, half_yz)
+            self.ax.set_zlim(-half_yz, half_yz)
+            if not getattr(self, '_view_initialized', False):
+                self.ax.view_init(elev=10, azim=0)
+                self._view_initialized = True
 
         # Draw fly as an elongated shape (like a real fly)
         # Create a simple fly body representation
@@ -751,10 +816,14 @@ class FruitFlyRacer3D:
 
     def render_frame(self):
         """Update the 3D view (matplotlib version)"""
-        if not self.viewer_running or not self.simulation_running:
+        # Keep rendering while paused so camera controls work
+        if not self.viewer_running and not self.simulation_running:
             return
 
         try:
+            # Handle WASD camera movement (paused or spectator mode)
+            self.update_camera_move(0.033)
+
             # Update fly position in 3D view
             self.update_3d_view()
 
@@ -786,52 +855,29 @@ class FruitFlyRacer3D:
             self.log(f"Canvas update error: {e}")
     
     def on_scroll(self, event):
-        """Handle mouse scroll for zoom - limited to stay inside tunnel"""
+        """Handle mouse scroll for zoom - stays inside tunnel bounds"""
         if event.inaxes != self.ax:
             return
 
-        # Get tunnel bounds
         tunnel_length = self.environment.tunnel_length
         tunnel_radius = self.environment.tunnel_radius
 
-        # Zoom in/out by changing axis limits
-        scale = 1.1 if event.step > 0 else 0.9
+        # Adjust zoom factor (1.0 = default follow view)
+        if not hasattr(self, '_zoom_factor'):
+            self._zoom_factor = 1.0
 
-        # Get current limits
-        xlim = self.ax.get_xlim()
-        ylim = self.ax.get_ylim()
-        zlim = self.ax.get_zlim()
+        if event.step > 0:
+            self._zoom_factor /= 1.15  # zoom in
+        else:
+            self._zoom_factor *= 1.15  # zoom out
 
-        # Calculate new limits (zoom towards center)
-        x_center = (xlim[0] + xlim[1]) / 2
-        y_center = (ylim[0] + ylim[1]) / 2
-        z_center = (zlim[0] + zlim[1]) / 2
+        # Clamp: can't zoom out beyond whole tunnel, can't zoom in too close
+        max_zoom_out = max(tunnel_length / 40.0, tunnel_radius / 10.0)
+        self._zoom_factor = float(np.clip(self._zoom_factor, 0.15, max_zoom_out))
 
-        x_range = (xlim[1] - xlim[0]) * scale
-        y_range = (ylim[1] - ylim[0]) * scale
-        z_range = (zlim[1] - zlim[0]) * scale
-
-        # Limit zoom to stay within tunnel bounds
-        max_x_range = tunnel_length * 0.8  # Can't zoom out beyond tunnel length
-        max_y_range = tunnel_radius * 2.5  # Can't zoom out beyond tunnel radius
-        max_z_range = tunnel_radius * 2.5
-
-        x_range = min(x_range, max_x_range)
-        y_range = min(y_range, max_y_range)
-        z_range = min(z_range, max_z_range)
-
-        # Also limit minimum zoom (can't zoom in too much)
-        min_range = tunnel_radius * 0.5
-        x_range = max(x_range, min_range)
-        y_range = max(y_range, min_range)
-        z_range = max(z_range, min_range)
-
-        # Set new limits
-        self.ax.set_xlim(x_center - x_range/2, x_center + x_range/2)
-        self.ax.set_ylim(y_center - y_range/2, y_center + y_range/2)
-        self.ax.set_zlim(z_center - z_range/2, z_center + z_range/2)
-
-        self.canvas.draw()
+        # Mark that user took camera control so follow-mode doesn't fight us
+        self._user_moved_camera = True
+        self.canvas.draw_idle()
 
     def on_mouse_press(self, event):
         """Handle mouse press for rotation"""
@@ -841,13 +887,12 @@ class FruitFlyRacer3D:
             self._last_y = event.y
 
     def on_mouse_move(self, event):
-        """Handle mouse move for rotation"""
-        if not hasattr(self, '_dragging') or not self._dragging:
+        """Handle mouse drag for 3D rotation"""
+        if not getattr(self, '_dragging', False):
             return
         if event.inaxes != self.ax:
             return
 
-        # Rotate the 3D view
         dx = event.x - self._last_x
         dy = event.y - self._last_y
 
@@ -860,17 +905,18 @@ class FruitFlyRacer3D:
         new_azim = azim - dx * 0.5
 
         self.ax.view_init(elev=new_elev, azim=new_azim)
+        self._user_moved_camera = True
 
         self._last_x = event.x
         self._last_y = event.y
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def on_mouse_release(self, event):
         """Handle mouse release"""
         self._dragging = False
 
     def toggle_spectator_mode(self):
-        """Toggle spectator mode"""
+        """Toggle spectator mode - free camera, fly keeps flying"""
         old_mode = self.spectator_mode
         self.spectator_mode = self.spectator_var.get()
 
@@ -879,60 +925,81 @@ class FruitFlyRacer3D:
             self.log("You can now:")
             self.log("  - Rotate view: Click and drag mouse")
             self.log("  - Zoom: Use mouse wheel")
+            self.log("  - WASD: move camera through tunnel")
             self.log("  - Fly continues flying normally")
             self.log("=============================")
-            # Enable interactive rotation
-            self.ax.mouse_init()
-            # Set a good viewing angle for spectator
-            self.ax.view_init(elev=30, azim=45)
+            self._user_moved_camera = True
         elif not self.spectator_mode and old_mode:
             self.log("=== SPECTATOR MODE DISABLED ===")
             self.log("Camera will now follow the fly")
             self.log("=============================")
-            # Reset to default view
-            self.ax.view_init(elev=20, azim=0)
+            self._user_moved_camera = False
+            self._zoom_factor = 1.0
+            self._cam_offset = np.array([0.0, 0.0, 0.0])
 
-    def on_mouse_move(self, event):
-        """Handle mouse movement for camera control"""
-        if not self.spectator_mode:
+    # ---- WASD camera movement ----
+    _MOVE_KEYS = {
+        'w': np.array([1.0, 0.0, 0.0]),    # forward along tunnel (+x)
+        's': np.array([-1.0, 0.0, 0.0]),   # backward along tunnel (-x)
+        'a': np.array([0.0, 0.0, -1.0]),   # strafe left (-z lateral)
+        'd': np.array([0.0, 0.0, 1.0]),    # strafe right (+z lateral)
+        'r': np.array([0.0, 1.0, 0.0]),    # up (+y vertical)
+        'f': np.array([0.0, -1.0, 0.0]),   # down (-y vertical)
+        'q': np.array([0.0, 0.0, 0.0]),    # reserved
+        'e': np.array([0.0, 0.0, 0.0]),    # reserved
+    }
+
+    def on_key_press(self, event):
+        """Track held keys for WASD camera movement"""
+        # Don't hijack keys while typing in an entry widget
+        if isinstance(self.root.focus_get(), (tk.Entry, ttk.Entry, ttk.Combobox)):
             return
+        key = event.keysym.lower()
+        if key in self._MOVE_KEYS:
+            if not hasattr(self, '_keys_down'):
+                self._keys_down = set()
+            self._keys_down.add(key)
+            self._user_moved_camera = True
 
-        # Update camera target based on mouse position
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-
-        # Normalize mouse position to [-1, 1]
-        x = (event.x / canvas_width) * 2 - 1
-        y = (event.y / canvas_height) * 2 - 1
-
-        # Update camera angles
-        self.camera_target[0] = self.camera_pos[0] + x * self.camera_distance
-        self.camera_target[1] = self.camera_pos[1] + y * self.camera_distance
-        self.camera_target[2] = self.camera_pos[2]
-
-    def on_mouse_click(self, event):
-        """Handle mouse click for camera control"""
-        if not self.spectator_mode:
+    def on_key_release(self, event):
+        """Track released keys"""
+        if isinstance(self.root.focus_get(), (tk.Entry, ttk.Entry, ttk.Combobox)):
             return
+        key = event.keysym.lower()
+        if hasattr(self, '_keys_down') and key in self._keys_down:
+            self._keys_down.discard(key)
 
-        # Move camera forward/backward based on click
-        if event.num == 1:  # Left click - move forward
-            self.camera_pos[2] += 1.0
-        elif event.num == 3:  # Right click - move backward
-            self.camera_pos[2] -= 1.0
+    def update_camera_move(self, dt):
+        """Move camera position with WASD while paused or in spectator mode"""
+        if not (self.simulation_paused or self.spectator_mode):
+            return
+        if not hasattr(self, '_keys_down') or not self._keys_down:
+            return
+        if not hasattr(self, '_cam_offset'):
+            self._cam_offset = np.array([0.0, 0.0, 0.0])
 
-    def update_camera(self):
-        """Update camera position based on spectator mode"""
-        if self.spectator_mode:
-            # Use spectator camera position
-            return self.camera_pos, self.camera_target
-        else:
-            # Follow fly position
+        # Camera move speed scales with zoom (closer = slower precise movement)
+        speed = 8.0 * getattr(self, '_zoom_factor', 1.0) * dt
+        move = np.zeros(3)
+        for key in self._keys_down:
+            move += self._MOVE_KEYS[key]
+
+        if np.linalg.norm(move) > 0:
+            self._cam_offset += move / np.linalg.norm(move) * speed * 4.0
+
+            # Clamp camera offset so view center stays inside tunnel
+            tunnel_length = self.environment.tunnel_length
+            tunnel_radius = self.environment.tunnel_radius
             fly_pos = self.fly_model.get_position()
-            # Camera behind and above fly
-            camera_pos = fly_pos + np.array([0, -self.camera_distance, self.camera_height])
-            camera_target = fly_pos
-            return camera_pos, camera_target
+            center = fly_pos + self._cam_offset
+            center[0] = np.clip(center[0], -tunnel_length/2, tunnel_length/2)
+            radial = np.sqrt(center[1]**2 + center[2]**2)
+            if radial > tunnel_radius * 0.85:
+                scale = tunnel_radius * 0.85 / radial
+                center[1] *= scale
+                center[2] *= scale
+            self._cam_offset = center - fly_pos
+            self._user_moved_camera = True
 
     def update_status(self):
         """Update status display"""
@@ -949,8 +1016,10 @@ class FruitFlyRacer3D:
     def simulation_complete(self):
         """Handle simulation completion"""
         self.simulation_running = False
+        self.simulation_paused = False
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
+        self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
         self.status_label.config(text="Complete", foreground="blue")
         self.log(f"Simulation complete! Total: {self.current_simulation}")
         self.log(f"Best Score: {self.best_score}")
@@ -959,8 +1028,10 @@ class FruitFlyRacer3D:
     def simulation_error(self):
         """Handle simulation error"""
         self.simulation_running = False
+        self.simulation_paused = False
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
+        self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
         self.status_label.config(text="Error", foreground="red")
         self.log("Simulation error occurred")
     
