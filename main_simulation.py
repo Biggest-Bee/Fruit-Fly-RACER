@@ -51,7 +51,7 @@ class FruitFlyRacer:
         )
         
         # MuJoCo Fly Model (loads official flybody automatically)
-        self.fly_model = MuJoCoFlyModel()
+        self.fly_model = MuJoCoFlyModel(environment=self.environment)
         self.fly_model.load_connectome()  # Load MaleCNS v1.0 connectome
         
         # Agent Logic

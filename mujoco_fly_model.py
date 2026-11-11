@@ -15,16 +15,18 @@ class MuJoCoFlyModel:
     Integrated with MaleCNS v1.0 connectome for neural control
     """
     
-    def __init__(self, connectome_weights=None):
+    def __init__(self, connectome_weights=None, environment=None):
         """
         Initialize MuJoCo fly model using official flybody
-        
+
         Args:
             connectome_weights: Optional connectome weight matrix for neural control
+            environment: Optional RacingEnvironment for tunnel constraints
         """
         self.model = None
         self.data = None
         self.viewer = None
+        self.environment = environment
         
         # Physics parameters - realistic flight constraints
         self.max_speed = 5.0              # m/s (max forward speed)
@@ -282,68 +284,76 @@ class MuJoCoFlyModel:
         if self.model is None or self.data is None:
             raise RuntimeError("Model not loaded. Call load_official_flybody() first.")
 
-        # Apply flight force (virtual wing flapping)
-        # Since flybody is a walking model, we add forward thrust
+        # Direct position/velocity control (simple approach)
         if desired_velocity is not None:
-            # Apply forward force in x direction (through horizontal tunnel)
-            # For free joint, forces are applied to first 6 DOF (3 translation + 3 rotation)
-            forward_force = desired_velocity[0] * 10.0  # Scale force
-            self.data.qfrc_applied[0] += forward_force  # X translation
+            # Get current position (use internal tracking, not MuJoCo)
+            if not hasattr(self, '_fly_pos'):
+                self._fly_pos = np.array([0.0, 0.0, -self.environment.tunnel_length/2 + 5])  # Start inside tunnel
+                self._fly_vel = np.array([0.0, 0.0, 0.0])
 
-            # Add some lift to keep fly airborne (y direction is up in tunnel)
-            lift_force = 5.0  # Constant upward force
-            self.data.qfrc_applied[1] += lift_force  # Y translation (up)
+            # Update velocity towards desired velocity
+            target_vel = desired_velocity.copy()
+            # Limit to max speed
+            speed = np.linalg.norm(target_vel)
+            if speed > self.max_speed:
+                target_vel = target_vel / speed * self.max_speed
 
-        # Step MuJoCo physics
-        mujoco.mj_step(self.model, self.data)
+            # Smooth velocity transition
+            self._fly_vel = self._fly_vel * 0.8 + target_vel * 0.2  # 80% current, 20% target
 
-        # Clear applied forces
-        self.data.qfrc_applied[:] = 0.0
+            # Update position based on velocity
+            self._fly_pos = self._fly_pos + self._fly_vel * dt
 
-        # Limit velocity to prevent teleporting
-        max_speed = 5.0  # m/s
-        # Use subtree_linvel for limiting (correct attribute in MuJoCo 3.16.0)
-        if self.model.nbody > 1:
-            current_speed = np.linalg.norm(self.data.subtree_linvel[1])
-            if current_speed > max_speed:
-                # Scale down velocity to max speed
-                scale = max_speed / current_speed
-                self.data.subtree_linvel[1] *= scale
-        else:
-            current_speed = np.linalg.norm(self.data.subtree_linvel[0])
-            if current_speed > max_speed:
-                scale = max_speed / current_speed
-                self.data.subtree_linvel[0] *= scale
+            # Apply position constraints (keep inside tunnel)
+            if self.environment is not None:
+                # Keep within tunnel radius (Y-Z plane for horizontal tunnel)
+                y, z = self._fly_pos[1], self._fly_pos[2]
+                radius = np.sqrt(y**2 + z**2)
+                max_radius = self.environment.tunnel_radius * 0.8
+                if radius > max_radius:
+                    scale = max_radius / radius
+                    self._fly_pos[1] *= scale
+                    self._fly_pos[2] *= scale
 
-        # Smooth position updates (prevent teleporting)
-        # Only allow small position changes per step
-        max_position_change = max_speed * dt  # Max distance per step
-        if self.data is not None:
-            # Get current position using body position
+                # Keep within tunnel length (X-axis)
+                self._fly_pos[0] = np.clip(self._fly_pos[0], -self.environment.tunnel_length/2, self.environment.tunnel_length/2)
+
+            # Update MuJoCo data for visualization
+            self._update_mujoco_position()
+
+    def _update_mujoco_position(self):
+        """Update MuJoCo model position for visualization"""
+        if not hasattr(self, '_fly_pos'):
+            return
+
+        # Set position in MuJoCo (try different methods)
+        try:
+            # Method 1: Set xpos directly
             if self.model.nbody > 1:
-                current_pos = self.data.xpos[1].copy()
+                self.data.xpos[1] = self._fly_pos
             else:
-                current_pos = self.data.xpos[0].copy()
+                self.data.xpos[0] = self._fly_pos
 
-            # Store previous position
-            if not hasattr(self, '_prev_pos'):
-                self._prev_pos = current_pos.copy()
+            # Method 2: Also set qpos for free joint (first 7 elements)
+            if self.model.nq >= 7:
+                self.data.qpos[0:3] = self._fly_pos  # Position
+                # Keep quaternion as identity (no rotation)
+                self.data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
 
-            # Calculate actual position change
-            pos_change = np.linalg.norm(current_pos - self._prev_pos)
+            # Update forward kinematics
+            mujoco.mj_forward(self.model, self.data)
+        except Exception as e:
+            # If MuJoCo update fails, just continue (position is tracked internally)
+            pass
 
-            # If position changed too much, interpolate
-            if pos_change > max_position_change:
-                # Move towards previous position + max allowed change
-                direction = (current_pos - self._prev_pos) / pos_change
-                new_pos = self._prev_pos + direction * max_position_change
-                # Update body position
-                if self.model.nbody > 1:
-                    self.data.xpos[1] = new_pos
-                else:
-                    self.data.xpos[0] = new_pos
+    def _set_position(self, pos):
+        """Set fly position"""
+        self._fly_pos = pos.copy()
+        self._update_mujoco_position()
 
-            self._prev_pos = current_pos.copy()
+    def _set_velocity(self, vel):
+        """Set fly velocity"""
+        self._fly_vel = vel.copy()
     
     def reset(self):
         """Reset the simulation to initial state"""
@@ -351,23 +361,26 @@ class MuJoCoFlyModel:
             mujoco.mj_resetData(self.model, self.data)
     
     def get_position(self) -> np.ndarray:
-        """Get current fly position (world coordinates)"""
+        """Get current fly position"""
+        if hasattr(self, '_fly_pos'):
+            return self._fly_pos.copy()
         if self.data is None:
             return np.array([0.0, 0.0, 0.0])
-        # Use body position (xpos) instead of qpos for free joint
-        # Body 1 is usually the main body (thorax)
+        # Fallback to MuJoCo body position
         if self.model.nbody > 1:
-            return self.data.xpos[1]  # Thorax position
-        return self.data.xpos[0]  # Fallback to world body
+            return self.data.xpos[1]
+        return self.data.xpos[0]
 
     def get_velocity(self) -> np.ndarray:
         """Get current fly velocity"""
+        if hasattr(self, '_fly_vel'):
+            return self._fly_vel.copy()
         if self.data is None:
             return np.array([0.0, 0.0, 0.0])
-        # Use subtree_linvel for linear velocity (correct attribute in MuJoCo 3.16.0)
+        # Fallback to MuJoCo body velocity
         if self.model.nbody > 1:
-            return self.data.subtree_linvel[1]  # Thorax linear velocity
-        return self.data.subtree_linvel[0]  # Fallback
+            return self.data.subtree_linvel[1]
+        return self.data.subtree_linvel[0]
     
     def apply_neural_control(self, motor_commands: np.ndarray):
         """

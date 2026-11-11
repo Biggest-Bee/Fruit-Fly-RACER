@@ -47,7 +47,7 @@ class FruitFlyRacer3D:
         
         # Initialize modules
         self.environment = RacingEnvironment(tunnel_length=200.0, tunnel_radius=10.0)
-        self.fly_model = MuJoCoFlyModel()
+        self.fly_model = MuJoCoFlyModel(environment=self.environment)
         self.fly_model.load_connectome()
         self.agent = AgentLogic(input_size=100)
         self.rewards = RewardSystem()
@@ -566,42 +566,38 @@ class FruitFlyRacer3D:
                 self.ax.plot_surface(x_grid_obs_cyl, y_grid_obs, z_grid_obs, alpha=1.0, color='orange')
 
             elif obs_type == 'cube':
-                # Draw cube obstacle (3D)
+                # Draw cube obstacle (3D) - simplified as box
                 x_min, x_max = pos[0] - size/2, pos[0] + size/2
                 y_min, y_max = pos[1] - size/2, pos[1] + size/2
                 z_min, z_max = pos[2] - size/2, pos[2] + size/2
 
-                # Draw cube faces
+                # Draw cube as 6 faces using plot_surface with proper arrays
                 # Front face
-                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
-                                   [[y_min, y_min], [y_max, y_max]],
-                                   [[z_min, z_min], [z_min, z_min]],
-                                   alpha=1.0, color='cyan')
+                x_front = np.array([[x_min, x_max], [x_min, x_max]])
+                y_front = np.array([[y_min, y_min], [y_max, y_max]])
+                z_front = np.array([[z_min, z_min], [z_min, z_min]])
+                self.ax.plot_surface(x_front, y_front, z_front, alpha=1.0, color='cyan')
+
                 # Back face
-                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
-                                   [[y_min, y_min], [y_max, y_max]],
-                                   [[z_max, z_max], [z_max, z_max]],
-                                   alpha=1.0, color='cyan')
+                z_back = np.array([[z_max, z_max], [z_max, z_max]])
+                self.ax.plot_surface(x_front, y_front, z_back, alpha=1.0, color='cyan')
+
                 # Top face
-                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
-                                   [[y_max, y_max], [y_max, y_max]],
-                                   [[z_min, z_max], [z_min, z_max]],
-                                   alpha=1.0, color='cyan')
+                y_top = np.array([[y_max, y_max], [y_max, y_max]])
+                z_top = np.array([[z_min, z_max], [z_min, z_max]])
+                self.ax.plot_surface(x_front, y_top, z_top, alpha=1.0, color='cyan')
+
                 # Bottom face
-                self.ax.plot_surface([[x_min, x_max], [x_min, x_max]],
-                                   [[y_min, y_min], [y_min, y_min]],
-                                   [[z_min, z_max], [z_min, z_max]],
-                                   alpha=1.0, color='cyan')
+                y_bottom = np.array([[y_min, y_min], [y_min, y_min]])
+                self.ax.plot_surface(x_front, y_bottom, z_top, alpha=1.0, color='cyan')
+
                 # Left face
-                self.ax.plot_surface([[x_min, x_min], [x_min, x_min]],
-                                   [[y_min, y_max], [y_min, y_max]],
-                                   [[z_min, z_max], [z_min, z_max]],
-                                   alpha=1.0, color='cyan')
+                x_left = np.array([[x_min, x_min], [x_min, x_min]])
+                self.ax.plot_surface(x_left, y_front, z_top, alpha=1.0, color='cyan')
+
                 # Right face
-                self.ax.plot_surface([[x_max, x_max], [x_max, x_max]],
-                                   [[y_min, y_max], [y_min, y_max]],
-                                   [[z_min, z_max], [z_min, z_max]],
-                                   alpha=1.0, color='cyan')
+                x_right = np.array([[x_max, x_max], [x_max, x_max]])
+                self.ax.plot_surface(x_right, y_front, z_top, alpha=1.0, color='cyan')
 
             elif obs_type == 'pyramid':
                 # Draw pyramid obstacle (3D)

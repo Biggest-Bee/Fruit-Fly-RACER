@@ -37,8 +37,8 @@ class RacingEnvironment:
         
         # Obstacles
         self.obstacles = []
-        # Obstacle types - all 3D shapes
-        self.obstacle_types = ['sphere', 'box', 'cylinder', 'cube', 'pyramid', 'tetrahedron']
+        # Obstacle types - only shapes that are properly rendered in 3D
+        self.obstacle_types = ['sphere', 'box', 'cylinder', 'cube']
         
         # Physics limits
         self.current_speed = 0.0
