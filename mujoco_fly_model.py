@@ -352,18 +352,9 @@ class MuJoCoFlyModel:
             else:
                 self._fly_stalled = False
 
-            # Wingbeat-coupled force: wings up -> fly pushed down,
-            # wings down -> fly pushed up. Accel ~ -sin(flap phase),
-            # synced with the renderer's 8 Hz visual flap.
-            self._fly_flap_phase = getattr(self, '_fly_flap_phase', 0.0) \
-                + 2.0 * np.pi * 8.0 * dt
-            self._fly_flap = -np.sin(self._fly_flap_phase)
-
-            # Net vertical accel = lift*cos(bank) - gravity + wingbeat.
-            # Bank reduces the vertical component of lift, so hard turns
-            # sink.
-            lift_vertical = (lift * np.cos(self._fly_bank)
-                             + 4.0 * self._fly_flap)
+            # Net vertical accel = lift*cos(bank) - gravity. Bank reduces
+            # the vertical component of lift, so hard turns sink.
+            lift_vertical = lift * np.cos(self._fly_bank)
             self._fly_vel[1] = np.clip(
                 self._fly_vel[1] + (lift_vertical - G) * dt,
                 -lat_max, lat_max)

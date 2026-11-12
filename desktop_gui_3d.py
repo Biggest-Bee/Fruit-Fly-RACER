@@ -934,11 +934,7 @@ class FruitFlyRacer3D:
         # so both wingtips beat upward together (~8 Hz)
         wm = self._fly_wing_mask
         if wm.any():
-            # use the physics model's flap phase so the visual beat is
-            # synced with the wingbeat lift force in step()
-            phase = getattr(self.fly_model, '_fly_flap_phase', None)
-            if phase is None:
-                phase = 2.0 * np.pi * 8.0 * now
+            phase = 2.0 * np.pi * 8.0 * now
             flap = 0.55 * np.sin(phase)          # ~0.55 rad stroke
             theta = -self._fly_wing_side[wm] * flap
             c, s = np.cos(theta), np.sin(theta)
