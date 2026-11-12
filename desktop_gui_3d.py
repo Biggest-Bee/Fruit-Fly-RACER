@@ -26,10 +26,7 @@ from agent_logic import AgentLogic
 from rewards import RewardSystem
 from sync_manager import SyncManager
 from mujoco_fly_model import MuJoCoFlyModel
-try:
-    from fly_cns_brain import FlyCNSBrain as FlyBrain
-except Exception:
-    from fly_brain import FlyBrain
+from fly_cns_brain import FlyCNSBrain as FlyBrain
 
 
 class FruitFlyRacer3D:
