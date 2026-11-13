@@ -1352,6 +1352,17 @@ class FruitFlyRacer3D:
         else:
             self._coord_text.set_text(hud)
 
+        # Hole guidance power readout under the coords
+        bh_power = 100 if self.bulkhead_var.get() else 0
+        bh_txt = f"Hole Guide: {bh_power}%"
+        if getattr(self, '_bh_text', None) is None:
+            self._bh_text = self.fig.text(
+                0.01, 0.93, bh_txt, fontsize=10, color='yellow',
+                va='top', ha='left',
+                bbox=dict(facecolor='black', alpha=0.5, pad=3))
+        else:
+            self._bh_text.set_text(bh_txt)
+
         # Zoom readout, top-right: factor + actual view window size
         try:
             xl = self.ax.get_xlim(); yl = self.ax.get_ylim(); zl = self.ax.get_zlim()
