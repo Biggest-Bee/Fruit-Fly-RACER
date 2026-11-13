@@ -90,6 +90,18 @@ class FruitFlyRacer3D:
                     self.environment.center_gain = gains[1]
                     self.environment.avoid_margin = gains[2]
                     print(f"Restored brain + steering gains from checkpoint")
+                # Restore personal bests + lifetime stats
+                self.best_score = ckpt.get('best_score', 0.0)
+                self.best_progress = ckpt.get('best_progress', 0.0)
+                bt = ckpt.get('best_time')
+                if bt is not None:
+                    self.best_time = float(bt)
+                self._total_episodes = ckpt.get('total_episodes', 0)
+                self._bh_power = ckpt.get('bh_power', 0.0)
+                self._slow_power = ckpt.get('slow_power', 0.0)
+                print(f"Restored stats: best={self.best_score:.1f}, "
+                      f"progress={self.best_progress*100:.1f}%, "
+                      f"episodes={self._total_episodes}")
         except Exception as e:
             print(f"No usable checkpoint ({e}) - starting fresh brain")
         # Gain hill-climbing state
@@ -303,8 +315,8 @@ class FruitFlyRacer3D:
         self.simulation_running = True
         self.simulation_paused = False
         self.current_simulation = 0
-        self.best_score = 0.0
-        self.best_progress = 0.0
+        # Personal bests persist across runs - only reset via a fresh
+        # checkpoint, not every time the sim starts
 
         # Keep the user's selected camera mode - don't force chase cam
         self._zoom_factor = 1.4
@@ -468,6 +480,9 @@ class FruitFlyRacer3D:
                 if result.get('finish_reached', False) and episode_time < self.best_time:
                     self.best_time = episode_time
                     self.log(f"New best time! {self.best_time:.2f}s")
+
+                # Lifetime episode counter (persisted in checkpoint)
+                self._total_episodes = getattr(self, '_total_episodes', 0) + 1
 
                 # Brain end-of-episode: decay exploration, adapt steering gains
                 self.brain.end_episode(result['score'], result['score'] >= self.best_score)
@@ -781,6 +796,10 @@ class FruitFlyRacer3D:
                           self.environment.center_gain,
                           self.environment.avoid_margin),
                 'best_score': self.best_score,
+                'best_progress': self.best_progress,
+                'best_time': (self.best_time
+                              if self.best_time != float('inf') else None),
+                'total_episodes': getattr(self, '_total_episodes', 0),
                 # assist powers - derived from episode_count but stored
                 # explicitly so the fade schedule survives restarts
                 'bh_power': getattr(self, '_bh_power', 0.0),
