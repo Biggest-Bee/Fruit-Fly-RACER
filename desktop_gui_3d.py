@@ -155,6 +155,7 @@ class FruitFlyRacer3D:
         # Left panel - Controls
         left_frame = ttk.LabelFrame(main_frame, text="Controls", padding=10)
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        self.left_frame = left_frame
         
         # Simulation controls
         ttk.Label(left_frame, text="Number of Simulations:").pack(anchor=tk.W, pady=5)
@@ -223,10 +224,12 @@ class FruitFlyRacer3D:
         # Right panel - 3D View and Log
         right_frame = ttk.Frame(main_frame)
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.right_frame = right_frame
 
         # 3D View - matplotlib 3D plot
         view_frame = ttk.LabelFrame(right_frame, text="3D View", padding=10)
         view_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.view_frame = view_frame
 
         # Create matplotlib figure and canvas with transparent background
         self.fig = Figure(figsize=(8, 6), dpi=100)
@@ -257,6 +260,7 @@ class FruitFlyRacer3D:
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
+        self.log_frame = log_frame
 
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
@@ -291,13 +295,9 @@ class FruitFlyRacer3D:
         self.best_score = 0.0
         self.best_progress = 0.0
 
-        # Reset camera state
-        self.camera_view = "chase"
-        self.view_mode_var.set("Chase Cam")
-        self._user_moved_camera = False
+        # Keep the user's selected camera mode - don't force chase cam
         self._zoom_factor = 1.0
         self._cam_offset = np.array([0.0, 0.0, 0.0])
-        self._view_initialized = False
         
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
@@ -305,17 +305,32 @@ class FruitFlyRacer3D:
         self.restart_btn.config(state=tk.NORMAL)
         self.status_label.config(text="Running", foreground="green")
         
+        # Fullscreen 3D view while sim runs - keyboard controls only
+        self._set_fullscreen(True)
         self.log(f"Starting simulation: {self.num_simulations} runs")
+        self.log("Keys: O=stop, P=pause, L=resume, Space/R=up, C/F=down, WASD=move cam")
         
         # Start simulation in separate thread
         self.simulation_thread = threading.Thread(target=self.run_simulation, daemon=True)
         self.simulation_thread.start()
     
+    def _set_fullscreen(self, on):
+        """Hide/show control panels so the 3D view fills the window"""
+        if on:
+            self.left_frame.pack_forget()
+            self.log_frame.pack_forget()
+        else:
+            self.left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10),
+                                 before=self.right_frame)
+            self.log_frame.pack(fill=tk.BOTH, expand=True)
+        self.root.update_idletasks()
+
     def stop_simulation(self):
         """Stop the simulation"""
         self.simulation_running = False
         self.simulation_paused = False
         self.viewer_running = False
+        self._set_fullscreen(False)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED)
@@ -518,12 +533,6 @@ class FruitFlyRacer3D:
 
                 step += 1
                 step_count += 1
-
-                # Log every 100 steps
-                if step_count % 100 == 0:
-                    pos = self.fly_model.get_position()
-                    vel = self.fly_model.get_velocity()
-                    self.log(f"Step {step_count}: pos=({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}), vel=({vel[0]:.2f}, {vel[1]:.2f}, {vel[2]:.2f})")
 
                 # Get current position and velocity from fly model
                 position = self.fly_model.get_position()
@@ -1261,6 +1270,18 @@ class FruitFlyRacer3D:
 
         # (title removed for clean view - stall state is in fly_model._fly_stalled)
 
+        # HUD: live coordinates, top-left of the 3D view
+        cam_center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
+        hud = (f"Fly: {fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}   "
+               f"You: {cam_center[0]:.1f}, {cam_center[1]:.1f}, {cam_center[2]:.1f}")
+        if getattr(self, '_coord_text', None) is None:
+            self._coord_text = self.fig.text(
+                0.01, 0.98, hud, fontsize=10, color='white',
+                va='top', ha='left',
+                bbox=dict(facecolor='black', alpha=0.5, pad=3))
+        else:
+            self._coord_text.set_text(hud)
+
         self.canvas.draw()
 
     def render_frame(self):
@@ -1463,6 +1484,19 @@ class FruitFlyRacer3D:
         if isinstance(self.root.focus_get(), (tk.Button, ttk.Button)):
             self.root.focus_set()
         key = event.keysym.lower()
+
+        # Simulation control keys (work in fullscreen where panels are hidden)
+        if self.simulation_running:
+            if key == 'o':
+                self.stop_simulation()
+                return
+            if key == 'p' and not self.simulation_paused:
+                self.pause_simulation()
+                return
+            if key == 'l' and self.simulation_paused:
+                self.pause_simulation()
+                return
+
         if key in self._MOVE_KEYS:
             if not hasattr(self, '_keys_down'):
                 self._keys_down = set()
@@ -1533,6 +1567,7 @@ class FruitFlyRacer3D:
         """Handle simulation completion"""
         self.simulation_running = False
         self.simulation_paused = False
+        self._set_fullscreen(False)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
@@ -1546,6 +1581,7 @@ class FruitFlyRacer3D:
         """Handle simulation error"""
         self.simulation_running = False
         self.simulation_paused = False
+        self._set_fullscreen(False)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED, text="Pause Simulation")
