@@ -21,6 +21,7 @@ class RewardSystem:
         self.penalty_per_collision = -50.0
         self.bulkhead_penalty = -100.0  # smacking into a bulkhead wall
         self.crash_penalty = -200.0   # ground strike (usually after a stall)
+        self.timeout_penalty = -100.0 # no progress for 60s -> map reset
         self.hole_bonus = 100.0       # threaded a bulkhead hole
         self.slow_bonus = 0.5         # per-step: slowed near bulkhead, off-cone
         self.progress_reward_multiplier = 100.0
@@ -80,6 +81,16 @@ class RewardSystem:
             Penalty value
         """
         return self.bulkhead_penalty
+
+    def calculate_timeout_penalty(self) -> float:
+        """
+        Penalty for making no forward progress for 60 seconds
+        (map gets regenerated)
+        
+        Returns:
+            Penalty value
+        """
+        return self.timeout_penalty
 
     def calculate_slow_bonus(self) -> float:
         """

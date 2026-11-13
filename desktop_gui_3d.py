@@ -552,6 +552,12 @@ class FruitFlyRacer3D:
             finish_reached = False
             restarted = False
 
+            # No-progress timeout: if the fly doesn't gain 0.5m forward
+            # for 60s, the map resets and it eats a penalty
+            PROGRESS_TIMEOUT = 60.0
+            last_prog_x = self.fly_model.get_position()[0]
+            last_prog_t = time.monotonic()
+
             while self.simulation_running:
                 # Handle pause - wait while paused but keep GUI responsive
                 while self.simulation_paused and self.simulation_running:
@@ -735,6 +741,23 @@ class FruitFlyRacer3D:
                         if bh_dx2 is not None:
                             self.rewards.update_total_points(
                                 reward=self.rewards.calculate_slow_bonus())
+
+                # No-progress timeout: stuck for 60s -> punish + new map
+                if position[0] > last_prog_x + 0.5:
+                    last_prog_x = position[0]
+                    last_prog_t = time.monotonic()
+                elif time.monotonic() - last_prog_t > PROGRESS_TIMEOUT:
+                    penalty = self.rewards.calculate_timeout_penalty()
+                    self.rewards.update_total_points(penalty=penalty)
+                    self.log(f"TIMEOUT: no progress for 60s! "
+                             f"New map generated. Penalty {penalty:.0f}")
+                    self.environment.generate_obstacles(
+                        num_obstacles=50, with_holes=True)
+                    self.update_mujoco_scene()
+                    self.fly_model.reset()
+                    self.environment.reset()
+                    last_prog_x = self.fly_model.get_position()[0]
+                    last_prog_t = time.monotonic()
 
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
