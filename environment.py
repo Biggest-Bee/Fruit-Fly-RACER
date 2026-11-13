@@ -203,8 +203,11 @@ class RacingEnvironment:
                         if any(o.get('type') == 'bulkhead'
                                for o in self.obstacles):
                             continue
+                        # bulkheads spawn in the middle third of the tunnel
+                        bx = random.uniform(-self.tunnel_length / 6,
+                                            self.tunnel_length / 6)
                         self.obstacles.append(
-                            self._make_bulkhead(z_pos))
+                            self._make_bulkhead(bx))
                         continue
 
                     # Decide hole first: holed obstacles are biased toward
@@ -264,8 +267,8 @@ class RacingEnvironment:
         # can theoretically miss it (~1% chance over 30 obstacles)
         if self.bulkheads_enabled and not any(
                 o.get('type') == 'bulkhead' for o in self.obstacles):
-            bx = random.uniform(-self.tunnel_length/2 + 10,
-                                self.tunnel_length/2 - 20)
+            bx = random.uniform(-self.tunnel_length / 6,
+                                self.tunnel_length / 6)
             self.obstacles.append(self._make_bulkhead(bx))
 
         # Keep the bulkhead hole corridor clear on BOTH sides: remove any
