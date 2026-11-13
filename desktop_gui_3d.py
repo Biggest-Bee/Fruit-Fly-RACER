@@ -583,6 +583,12 @@ class FruitFlyRacer3D:
                 lat_y = (1 - alpha) * teacher_y + alpha * brain_act[0]
                 lat_z = (1 - alpha) * teacher_z + alpha * brain_act[1]
 
+                # Bulkhead holes: direct guidance applied AFTER the blend
+                # so the fly seeks holes even when the brain drives
+                bh = self.environment.bulkhead_guidance(position)
+                lat_y += bh[0]
+                lat_z += bh[1]
+
                 desired_velocity = np.array([
                     self.environment.max_speed * 0.8,   # forward along tunnel
                     np.clip(lat_y, -4.0, 4.0),

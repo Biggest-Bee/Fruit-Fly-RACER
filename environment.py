@@ -484,6 +484,17 @@ class RacingEnvironment:
         steer = np.zeros(3)
         x, y, z = position
 
+        # Only the NEAREST bulkhead ahead attracts - paired walls have
+        # different holes and simultaneous pulls cancel each other out
+        nearest_bh_x = None
+        for obs in self.obstacles:
+            if obs.get('type') != 'bulkhead':
+                continue
+            dx = obs['position'][0] - x
+            if 0.5 < dx <= lookahead and \
+                    (nearest_bh_x is None or dx < nearest_bh_x[0]):
+                nearest_bh_x = (dx, obs['position'][0])
+
         for obs in self.obstacles:
             ox, oy, oz = obs['position']
             dx = ox - x
@@ -493,10 +504,12 @@ class RacingEnvironment:
             # Bulkhead: attract the fly toward the hole instead of
             # repelling - the hole is the only way through
             if obs.get('type') == 'bulkhead':
+                if nearest_bh_x is None or ox != nearest_bh_x[1]:
+                    continue
                 hy, hz = oy, oz
                 dy, dz = hy - y, hz - z
                 d = math.hypot(dy, dz) + 1e-6
-                w = max(0.0, obs['hole_size'] + 3.0 - d)
+                w = max(0.0, obs['hole_size'] + 6.0 - d)
                 steer[1] += (dy / d) * w
                 steer[2] += (dz / d) * w
                 continue
@@ -526,6 +539,34 @@ class RacingEnvironment:
         if lat_norm > max_steer:
             steer[1:] *= max_steer / lat_norm
         return steer
+
+    def bulkhead_guidance(self, position: np.ndarray,
+                          lookahead: float = 25.0):
+        """
+        Direct pull toward the nearest bulkhead hole ahead.
+        Applied post-blend in the sim loop so hole-seeking survives
+        brain takeover (the learned brain never saw hole rewards).
+        Returns [vy, vz] in m/s.
+        """
+        x, y, z = position
+        best = None
+        for obs in self.obstacles:
+            if obs.get('type') != 'bulkhead':
+                continue
+            ox, oy, oz = obs['position']
+            dx = ox - x
+            if not (0.5 < dx <= lookahead):
+                continue
+            if best is None or dx < best[0]:
+                best = (dx, oy, oz, obs['hole_size'])
+        if best is None:
+            return np.zeros(2)
+        _, hy, hz, hole = best
+        dy, dz = hy - y, hz - z
+        d = math.hypot(dy, dz) + 1e-6
+        # Strong pull when lined up on the hole, fading with distance
+        w = max(0.0, min(1.0, (hole + 8.0 - d) / 8.0)) * 3.5
+        return np.array([dy / d * w, dz / d * w])
 
     def check_collision(self, position: np.ndarray) -> bool:
         """
