@@ -268,9 +268,9 @@ class RacingEnvironment:
                                 self.tunnel_length/2 - 20)
             self.obstacles.append(self._make_bulkhead(bx))
 
-        # Keep the bulkhead hole approach cone clear: remove any obstacle
-        # sitting in the flared region in front of the hole so the hole
-        # seeker always has a clean line to the hole
+        # Keep the bulkhead hole corridor clear on BOTH sides: remove any
+        # obstacle in the flared region in front of AND behind the hole
+        # so the fly has a clean line through it
         bh = next((o for o in self.obstacles
                    if o.get('type') == 'bulkhead'), None)
         if bh is not None:
@@ -282,11 +282,11 @@ class RacingEnvironment:
                 if obs.get('type') == 'bulkhead':
                     kept.append(obs)
                     continue
-                dx = ox - obs['position'][0]      # >0 = in front of wall
-                if 0.0 < dx <= 18.0:
+                adx = abs(ox - obs['position'][0])   # distance along tunnel
+                if adx <= 18.0:
                     d_axis = math.hypot(obs['position'][1] - hy,
                                         obs['position'][2] - hz)
-                    cone_r = hole + dx * 0.15 + \
+                    cone_r = hole + adx * 0.15 + \
                         self.collision_radius(obs) * 0.5
                     if d_axis < cone_r:
                         continue                  # blocks the hole path
