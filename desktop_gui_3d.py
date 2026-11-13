@@ -597,9 +597,6 @@ class FruitFlyRacer3D:
                 # Only active while bulkheads are enabled.
                 if self.bulkhead_var.get():
                     bh = self.environment.bulkhead_guidance(position)
-                    # extra authority on the vertical axis - high holes
-                    # need the fly to actually climb, not just drift up
-                    bh[0] *= 1.5
                 else:
                     bh = np.zeros(2)
                 lat_y += bh[0]
