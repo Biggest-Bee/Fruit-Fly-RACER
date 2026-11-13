@@ -597,6 +597,9 @@ class FruitFlyRacer3D:
                 # Only active while bulkheads are enabled.
                 if self.bulkhead_var.get():
                     bh = self.environment.bulkhead_guidance(position)
+                    # Guidance fades 10% per episode so the fly learns
+                    # to navigate bulkheads on its own
+                    bh *= max(0.0, 1.0 - 0.1 * self.brain.episode_count)
                 else:
                     bh = np.zeros(2)
                 lat_y += bh[0]
