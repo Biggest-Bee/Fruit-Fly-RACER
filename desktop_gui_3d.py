@@ -1211,25 +1211,6 @@ class FruitFlyRacer3D:
             self.ax.set_xlim(center[0] - half_x, center[0] + half_x)
             self.ax.set_ylim(center[1] - half_yz, center[1] + half_yz)
             self.ax.set_zlim(center[2] - half_yz, center[2] + half_yz)
-
-            # Spectator auto-follow: when the user isn't pressing keys or
-            # dragging, ease the camera to face along the fly's velocity
-            # (same "behind the fly" geometry as chase cam)
-            keys_down = getattr(self, '_keys_down', set())
-            idle = (time.monotonic()
-                    - getattr(self, '_cam_input_t', 0.0)) > 1.5
-            if (self.spectator_mode and not keys_down and idle
-                    and np.linalg.norm(fly_vel) > 0.3):
-                heading = np.degrees(np.arctan2(fly_vel[2], fly_vel[0]))
-                target_azim = (270.0 - heading) % 360.0
-                cur = self.ax.azim % 360.0
-                diff = (target_azim - cur + 180.0) % 360.0 - 180.0
-                new_azim = (cur + diff * 0.08) % 360.0
-                kw = {'vertical_axis': 'y'}
-                if getattr(self.ax, 'roll', 0):
-                    kw['roll'] = self.ax.roll
-                self.ax.view_init(elev=self.ax.elev, azim=new_azim, **kw)
-
             if not getattr(self, '_view_initialized', False):
                 self.ax.view_init(elev=15, azim=270, vertical_axis='y')
                 self._view_initialized = True
@@ -1448,7 +1429,6 @@ class FruitFlyRacer3D:
             self.log("  - Zoom: Use mouse wheel")
             self.log("  - WASD: move camera through tunnel")
             self.log("  - Space/R: up, C/F: down")
-            self.log("  - Idle: camera auto-follows fly heading")
             self.log("  - Fly continues flying normally")
             self.log("=============================")
             self._user_moved_camera = True
