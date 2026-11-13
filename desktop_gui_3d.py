@@ -182,6 +182,9 @@ class FruitFlyRacer3D:
         self.restart_btn = ttk.Button(left_frame, text="Restart Episode", command=self.restart_episode, state=tk.DISABLED)
         self.restart_btn.pack(fill=tk.X, pady=5)
 
+        ttk.Button(left_frame, text="Fullscreen 3D View",
+                   command=self.toggle_fullscreen).pack(fill=tk.X, pady=5)
+
         # Camera view mode: Chase Cam / Fly POV / Spectator
         self.camera_view = "chase"  # 'chase', 'flypov', 'spectator'
         ttk.Label(left_frame, text="Camera View:").pack(anchor=tk.W, pady=5)
@@ -306,8 +309,9 @@ class FruitFlyRacer3D:
         self.restart_btn.config(state=tk.NORMAL)
         self.status_label.config(text="Running", foreground="green")
         
-        # Fullscreen 3D view while sim runs - keyboard controls only
-        self._set_fullscreen(True)
+        # Fullscreen 3D view while sim runs - except in spectator mode,
+        # where the user keeps the panels (fullscreen is a button there)
+        self._set_fullscreen(not self.spectator_mode)
         self.log(f"Starting simulation: {self.num_simulations} runs")
         self.log("Keys: O=stop, P=pause, L=resume, Space/R=up, C/F=down, WASD=move cam")
         
@@ -317,6 +321,10 @@ class FruitFlyRacer3D:
     
     def _set_fullscreen(self, on):
         """Hide/show control panels so the 3D view fills the window"""
+        on = bool(on)
+        if on == getattr(self, '_fullscreen', False):
+            return
+        self._fullscreen = on
         if on:
             self.left_frame.pack_forget()
             self.log_frame.pack_forget()
@@ -325,6 +333,10 @@ class FruitFlyRacer3D:
                                  before=self.right_frame)
             self.log_frame.pack(fill=tk.BOTH, expand=True)
         self.root.update_idletasks()
+
+    def toggle_fullscreen(self):
+        """Button: manually toggle the fullscreen 3D view"""
+        self._set_fullscreen(not getattr(self, '_fullscreen', False))
 
     def stop_simulation(self):
         """Stop the simulation"""
@@ -1466,11 +1478,14 @@ class FruitFlyRacer3D:
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
     def exit_spectator(self, event=None):
-        """Ctrl+P: leave spectator mode, back to chase cam"""
+        """Ctrl+P: exit spectator mode; if not in spectator, exit fullscreen"""
         if self.spectator_mode:
             self.spectator_var.set(False)
             self.toggle_spectator_mode()
             self.log("=== SPECTATOR MODE DISABLED (Ctrl+P) ===")
+        elif getattr(self, '_fullscreen', False):
+            self._set_fullscreen(False)
+            self.log("=== FULLSCREEN OFF (Ctrl+P) ===")
 
     # ---- WASD camera movement ----
     _MOVE_KEYS = {
