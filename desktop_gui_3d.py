@@ -99,6 +99,11 @@ class FruitFlyRacer3D:
                 self._total_episodes = ckpt.get('total_episodes', 0)
                 self._bh_power = ckpt.get('bh_power', 0.0)
                 self._slow_power = ckpt.get('slow_power', 0.0)
+                self._assist_override = ckpt.get('assist_override')
+                if (self._assist_override is not None
+                        and hasattr(self, 'assist_var')):
+                    self.assist_var.set(
+                        f"{self._assist_override * 100:.0f}")
                 print(f"Restored stats: best={self.best_score:.1f}, "
                       f"progress={self.best_progress*100:.1f}%, "
                       f"episodes={self._total_episodes}")
@@ -128,6 +133,7 @@ class FruitFlyRacer3D:
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         self._view_initialized = False
         self._keys_down = set()
+        self._assist_override = None   # None = auto 1%/episode fade
 
         # Best time tracking
         self.best_time = float('inf')
@@ -219,6 +225,18 @@ class FruitFlyRacer3D:
         ttk.Checkbutton(left_frame, text="Bulkhead Walls",
                         variable=self.bulkhead_var,
                         command=self.toggle_bulkheads).pack(fill=tk.X, pady=5)
+
+        # Manual assist power override (blank = auto 1%/episode fade)
+        ttk.Label(left_frame, text="Assist Power % (blank=auto):",
+                  ).pack(anchor=tk.W, pady=(5, 0))
+        assist_row = ttk.Frame(left_frame)
+        assist_row.pack(fill=tk.X, pady=2)
+        self.assist_var = tk.StringVar(value="")
+        ttk.Entry(assist_row, textvariable=self.assist_var,
+                  width=8).pack(side=tk.LEFT)
+        ttk.Button(assist_row, text="Set", width=5,
+                   command=self.set_assist_power).pack(side=tk.LEFT,
+                                                     padx=(4, 0))
 
         # Camera controls hint
         ttk.Label(left_frame, text="Camera: drag=rotate, wheel=zoom, WASD=move", 
@@ -616,10 +634,13 @@ class FruitFlyRacer3D:
                 # Bulkhead holes: direct guidance applied AFTER the blend
                 # so the fly seeks holes even when the brain drives.
                 # Only active while bulkheads are enabled.
-                # Assist power: both hole guidance and wall slowdown fade
-                # 1% per episode so the fly gradually learns on its own
-                assist_power = max(0.0, 1.0
-                                   - 0.01 * self.brain.episode_count)
+                # Assist power: manual override wins, otherwise both
+                # assists fade 1% per episode so the fly learns on its own
+                if self._assist_override is not None:
+                    assist_power = self._assist_override
+                else:
+                    assist_power = max(0.0, 1.0
+                                       - 0.01 * self.brain.episode_count)
                 self._bh_power = assist_power if self.bulkhead_var.get() else 0.0
                 self._slow_power = self._bh_power
 
@@ -827,6 +848,7 @@ class FruitFlyRacer3D:
                 # explicitly so the fade schedule survives restarts
                 'bh_power': getattr(self, '_bh_power', 0.0),
                 'slow_power': getattr(self, '_slow_power', 0.0),
+                'assist_override': self._assist_override,
             })
         except Exception as e:
             self.log(f"Checkpoint save failed: {e}")
@@ -1627,6 +1649,23 @@ class FruitFlyRacer3D:
             self._user_moved_camera = False
             self._zoom_factor = 1.4
             self._cam_offset = np.array([0.0, 0.0, 0.0])
+
+    def set_assist_power(self):
+        """Set manual assist power % for hole guide + slow-assist.
+        Empty/'auto' restores the 1%/episode fade."""
+        txt = self.assist_var.get().strip().lower()
+        if txt in ('', 'auto'):
+            self._assist_override = None
+            self.log("Assist power: AUTO (1%/episode fade)")
+            return
+        try:
+            pct = float(txt)
+        except ValueError:
+            self.log("Assist power: invalid number - use 0-100 or 'auto'")
+            return
+        self._assist_override = float(np.clip(pct, 0.0, 100.0)) / 100.0
+        self.log(f"Assist power set to {pct:.0f}% "
+                 f"(hole guide + slow-assist)")
 
     def toggle_bulkheads(self):
         """Enable/disable bulkhead walls + hole-seeker helper.
