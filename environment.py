@@ -40,6 +40,7 @@ class RacingEnvironment:
         # Obstacle types - 3D shapes: squares=cube, triangles=pyramid/tetrahedron,
         # circles=sphere, rectangles=box
         self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron']
+        self.bulkheads_enabled = False
         
         # Physics limits
         self.current_speed = 0.0
@@ -54,6 +55,15 @@ class RacingEnvironment:
         self.avoid_margin = 3.0     # extra margin around obstacles
         
         print(f"Racing Environment initialized: {tunnel_length}m tunnel, {tunnel_radius}m radius")
+
+    def set_bulkheads(self, enabled: bool):
+        """Toggle bulkhead wall obstacles (and hole-seeking) on/off.
+        Takes effect on the next course generation."""
+        self.bulkheads_enabled = bool(enabled)
+        if self.bulkheads_enabled and 'bulkhead' not in self.obstacle_types:
+            self.obstacle_types.append('bulkhead')
+        elif not self.bulkheads_enabled and 'bulkhead' in self.obstacle_types:
+            self.obstacle_types.remove('bulkhead')
 
     def reset(self):
         """Reset the environment to initial state"""

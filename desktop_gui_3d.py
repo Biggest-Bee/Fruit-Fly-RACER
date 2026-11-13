@@ -201,6 +201,13 @@ class FruitFlyRacer3D:
                                          command=self.toggle_spectator_mode)
         spectator_check.pack(fill=tk.X, pady=5)
 
+        # Bulkhead walls toggle (off by default - hole seeker helper
+        # only runs while enabled)
+        self.bulkhead_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(left_frame, text="Bulkhead Walls",
+                        variable=self.bulkhead_var,
+                        command=self.toggle_bulkheads).pack(fill=tk.X, pady=5)
+
         # Camera controls hint
         ttk.Label(left_frame, text="Camera: drag=rotate, wheel=zoom, WASD=move", 
                  font=("Arial", 8), foreground="gray").pack(anchor=tk.W, pady=2)
@@ -586,8 +593,12 @@ class FruitFlyRacer3D:
                 lat_z = (1 - alpha) * teacher_z + alpha * brain_act[1]
 
                 # Bulkhead holes: direct guidance applied AFTER the blend
-                # so the fly seeks holes even when the brain drives
-                bh = self.environment.bulkhead_guidance(position)
+                # so the fly seeks holes even when the brain drives.
+                # Only active while bulkheads are enabled.
+                if self.bulkhead_var.get():
+                    bh = self.environment.bulkhead_guidance(position)
+                else:
+                    bh = np.zeros(2)
                 lat_y += bh[0]
                 lat_z += bh[1]
 
@@ -1513,6 +1524,15 @@ class FruitFlyRacer3D:
             self._user_moved_camera = False
             self._zoom_factor = 0.8
             self._cam_offset = np.array([0.0, 0.0, 0.0])
+
+    def toggle_bulkheads(self):
+        """Enable/disable bulkhead walls + hole-seeker helper.
+        Takes effect on the next generated course."""
+        enabled = self.bulkhead_var.get()
+        self.environment.set_bulkheads(enabled)
+        self.log(f"Bulkhead walls {'ENABLED' if enabled else 'DISABLED'} "
+                 f"- {'hole seeker active' if enabled else 'no hole seeker'} "
+                 f"(next course)")
 
     def exit_spectator(self, event=None):
         """Ctrl+P: exit spectator mode; if not in spectator, exit fullscreen"""
