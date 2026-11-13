@@ -256,6 +256,7 @@ class FruitFlyRacer3D:
         # WASD camera movement keys
         self.root.bind('<KeyPress>', self.on_key_press)
         self.root.bind('<KeyRelease>', self.on_key_release)
+        self.root.bind('<Control-p>', self.exit_spectator)
 
         # Log panel
         log_frame = ttk.LabelFrame(right_frame, text="Simulation Log", padding=10)
@@ -1204,8 +1205,13 @@ class FruitFlyRacer3D:
                 self.ax.view_init(elev=2, azim=270, vertical_axis='y')
                 self._view_initialized = True
         elif user_control:
-            # User controls camera: center on fly + manual pan offset, keep user zoom/rotation
-            center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
+            # User controls camera. Spectator uses a fixed world-space
+            # camera position; paused-mode pan stays relative to the fly.
+            if self.spectator_mode:
+                center = getattr(self, '_cam_world',
+                                 self.fly_model.get_position())
+            else:
+                center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
             half_x = 20.0 * zoom
             half_yz = tunnel_radius * zoom
             self.ax.set_xlim(center[0] - half_x, center[0] + half_x)
@@ -1252,7 +1258,10 @@ class FruitFlyRacer3D:
         # (title removed for clean view - stall state is in fly_model._fly_stalled)
 
         # HUD: live coordinates, top-left of the 3D view
-        cam_center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
+        if self.spectator_mode:
+            cam_center = getattr(self, '_cam_world', fly_pos)
+        else:
+            cam_center = fly_pos + getattr(self, '_cam_offset', np.zeros(3))
         hud = (f"Fly: {fly_pos[0]:.1f}, {fly_pos[1]:.1f}, {fly_pos[2]:.1f}   "
                f"You: {cam_center[0]:.1f}, {cam_center[1]:.1f}, {cam_center[2]:.1f}")
         if getattr(self, '_coord_text', None) is None:
@@ -1348,10 +1357,20 @@ class FruitFlyRacer3D:
             self._last_y = event.y
 
     def on_mouse_move(self, event):
-        """Handle mouse drag for 3D rotation"""
-        if not getattr(self, '_dragging', False):
-            return
+        """Handle mouse drag for 3D rotation - in spectator mode the view
+        follows the mouse with no click required"""
         if event.inaxes != self.ax:
+            return
+        if not getattr(self, '_dragging', False) and not self.spectator_mode:
+            # keep baseline fresh so entering spectator doesn't jump
+            self._last_x = event.x
+            self._last_y = event.y
+            return
+
+        # No baseline yet (just entered spectator / released mouse)
+        if getattr(self, '_last_x', None) is None:
+            self._last_x = event.x
+            self._last_y = event.y
             return
 
         dx = event.x - self._last_x
@@ -1423,13 +1442,19 @@ class FruitFlyRacer3D:
             self.camera_view = "chase"
 
         if self.spectator_mode and not old_mode:
+            # Anchor the free camera at the fly's current position - it
+            # stays fixed in world space and does NOT follow the fly
+            self._cam_world = self.fly_model.get_position().copy()
+            self._last_x = None
+            self._last_y = None
             self.log("=== SPECTATOR MODE ENABLED ===")
             self.log("You can now:")
-            self.log("  - Rotate view: Click and drag mouse")
+            self.log("  - Look: move mouse (no click needed) or drag")
             self.log("  - Zoom: Use mouse wheel")
             self.log("  - WASD: move camera through tunnel")
             self.log("  - Space/R: up, C/F: down")
-            self.log("  - Fly continues flying normally")
+            self.log("  - Ctrl+P: exit spectator")
+            self.log("  - Camera stays fixed - it does NOT follow the fly")
             self.log("=============================")
             self._user_moved_camera = True
         elif not self.spectator_mode and old_mode:
@@ -1439,6 +1464,13 @@ class FruitFlyRacer3D:
             self._user_moved_camera = False
             self._zoom_factor = 1.0
             self._cam_offset = np.array([0.0, 0.0, 0.0])
+
+    def exit_spectator(self, event=None):
+        """Ctrl+P: leave spectator mode, back to chase cam"""
+        if self.spectator_mode:
+            self.spectator_var.set(False)
+            self.toggle_spectator_mode()
+            self.log("=== SPECTATOR MODE DISABLED (Ctrl+P) ===")
 
     # ---- WASD camera movement ----
     _MOVE_KEYS = {
@@ -1464,6 +1496,10 @@ class FruitFlyRacer3D:
         if isinstance(self.root.focus_get(), (tk.Button, ttk.Button)):
             self.root.focus_set()
         key = event.keysym.lower()
+
+        # Ignore Control combos here - <Control-p> etc have their own binds
+        if event.state & 0x4:
+            return
 
         # Simulation control keys (work in fullscreen where panels are hidden)
         if self.simulation_running:
@@ -1513,15 +1549,26 @@ class FruitFlyRacer3D:
             # Clamp camera offset so view center stays inside tunnel
             tunnel_length = self.environment.tunnel_length
             tunnel_radius = self.environment.tunnel_radius
-            fly_pos = self.fly_model.get_position()
-            center = fly_pos + self._cam_offset
+            if self.spectator_mode:
+                # World-anchored free camera: move the camera itself
+                if not hasattr(self, '_cam_world'):
+                    self._cam_world = self.fly_model.get_position().copy()
+                self._cam_world += (move / np.linalg.norm(move)
+                                    * speed * 4.0)
+                center = self._cam_world
+            else:
+                fly_pos = self.fly_model.get_position()
+                center = fly_pos + self._cam_offset
             center[0] = np.clip(center[0], -tunnel_length/2, tunnel_length/2)
             radial = np.sqrt(center[1]**2 + center[2]**2)
             if radial > tunnel_radius * 0.85:
                 scale = tunnel_radius * 0.85 / radial
                 center[1] *= scale
                 center[2] *= scale
-            self._cam_offset = center - fly_pos
+            if self.spectator_mode:
+                self._cam_world = center
+            else:
+                self._cam_offset = center - fly_pos
             self._user_moved_camera = True
 
     def update_status(self):
