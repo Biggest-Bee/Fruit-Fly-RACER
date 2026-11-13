@@ -275,7 +275,7 @@ class FruitFlyRacer3D:
         # Log the initialization
         self.log("Fruit Fly Racer 3D initialized")
         self.log("Click 'Start Simulation' to begin training")
-        self.log("3D view will open in separate MuJoCo window")
+        self.log("3D view renders in this window")
     
     def log(self, message):
         """Add message to log (read-only)"""
