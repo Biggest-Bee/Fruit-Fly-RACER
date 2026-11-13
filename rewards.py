@@ -20,6 +20,7 @@ class RewardSystem:
         self.max_points = 1000.0
         self.penalty_per_collision = -50.0
         self.crash_penalty = -200.0   # ground strike (usually after a stall)
+        self.hole_bonus = 100.0       # threaded a bulkhead hole
         self.progress_reward_multiplier = 100.0
         
         self.collision_count = 0
@@ -68,6 +69,15 @@ class RewardSystem:
         """
         self.crash_count += 1
         return self.crash_penalty
+    
+    def calculate_hole_bonus(self) -> float:
+        """
+        Bonus for threading a bulkhead hole
+        
+        Returns:
+            Bonus value
+        """
+        return self.hole_bonus
     
     def update_total_points(self, reward: float = 0.0, penalty: float = 0.0):
         """

@@ -521,6 +521,7 @@ class FruitFlyRacer3D:
             self.rewards.reset()
             self.brain.reset_episode()
             self._ground_hit = False
+            self._bh_passed = set()   # bulkhead holes already threaded
 
             # Run until the fly reaches the finish line (no step cap)
             step = 0
@@ -578,8 +579,9 @@ class FruitFlyRacer3D:
                 teacher_y = steer[1] + 0.6 * np.sin(t * 1.7)   # vertical
                 teacher_z = steer[2] + 0.6 * np.cos(t * 1.3)   # lateral
 
-                # Brain takes over gradually over ~30 episodes
-                alpha = min(1.0, self.brain.episode_count / 30.0)
+                # Brain takes over gradually over ~100 episodes - the
+                # guided phase is long enough to learn hole-seeking
+                alpha = min(1.0, self.brain.episode_count / 100.0)
                 lat_y = (1 - alpha) * teacher_y + alpha * brain_act[0]
                 lat_z = (1 - alpha) * teacher_z + alpha * brain_act[1]
 
@@ -596,12 +598,15 @@ class FruitFlyRacer3D:
                 ])
                 desired_turn = np.array([0.0, 0.0])
 
-                # Brain learns from teacher demonstrations
-                self.brain.record(bstate, np.array([teacher_y, teacher_z]))
+                # Brain learns from teacher demonstrations - include the
+                # bulkhead hole guidance so it learns to seek holes
+                self.brain.record(bstate, np.array(
+                    [teacher_y + bh[0], teacher_z + bh[1]]))
                 if step % 10 == 0:
                     self.brain.learn(steps=5)
 
                 # Step MuJoCo physics with flight force
+                x_before = position[0]
                 self.fly_model.step(dt, desired_velocity=desired_velocity, desired_turn=desired_turn)
 
                 # Wind pushes the fly - gusts drift it off-line
@@ -640,6 +645,22 @@ class FruitFlyRacer3D:
                                  f"Penalty {penalty:.0f}")
                 elif position[1] > floor_y + 0.5:
                     self._ground_hit = False
+
+                # Bulkhead hole bonus: crossed the wall plane inside the
+                # hole radius - once per wall per episode
+                for obs in self.environment.obstacles:
+                    if obs.get('type') != 'bulkhead' or id(obs) in self._bh_passed:
+                        continue
+                    ox = obs['position'][0]
+                    if (x_before < ox <= position[0]
+                            and np.hypot(position[1] - obs['position'][1],
+                                         position[2] - obs['position'][2])
+                            <= obs['hole_size']):
+                        self._bh_passed.add(id(obs))
+                        bonus = self.rewards.calculate_hole_bonus()
+                        self.rewards.update_total_points(reward=bonus)
+                        self.log(f"HOLE! +{bonus:.0f} "
+                                 f"({len(self._bh_passed)} this episode)")
 
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
