@@ -112,7 +112,7 @@ class FruitFlyRacer3D:
 
         # Camera control state
         self._user_moved_camera = False
-        self._zoom_factor = 1.0
+        self._zoom_factor = 0.8
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         self._view_initialized = False
         self._keys_down = set()
@@ -300,7 +300,7 @@ class FruitFlyRacer3D:
         self.best_progress = 0.0
 
         # Keep the user's selected camera mode - don't force chase cam
-        self._zoom_factor = 1.0
+        self._zoom_factor = 0.8
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         
         self.start_btn.config(state=tk.DISABLED)
@@ -1234,7 +1234,7 @@ class FruitFlyRacer3D:
 
         user_control = self.spectator_mode or self.simulation_paused or getattr(self, '_user_moved_camera', False)
         camera_view = getattr(self, 'camera_view', 'chase')
-        zoom = getattr(self, '_zoom_factor', 1.0)
+        zoom = getattr(self, '_zoom_factor', 0.8)
 
         if camera_view == 'flypov' and not self.spectator_mode:
             # Fly POV: first-person view from the fly looking down the tunnel (+x)
@@ -1275,15 +1275,6 @@ class FruitFlyRacer3D:
                 self.ax.view_init(elev=25, azim=270, vertical_axis='y')
                 self._view_initialized = True
 
-        # remove the temporary zoom indicator if it was created
-        zt = getattr(self, '_zoom_text', None)
-        if zt is not None:
-            try:
-                zt.remove()
-            except Exception:
-                pass
-            self._zoom_text = None
-
         # Draw the real official flybody model (all geoms: body, eyes,
         # antennae, legs, wings) instead of a proxy shape
         self._draw_flybody(fly_pos, fly_vel)
@@ -1314,6 +1305,21 @@ class FruitFlyRacer3D:
                 bbox=dict(facecolor='black', alpha=0.5, pad=3))
         else:
             self._coord_text.set_text(hud)
+
+        # Zoom readout, top-right: factor + actual view window size
+        try:
+            xl = self.ax.get_xlim(); yl = self.ax.get_ylim(); zl = self.ax.get_zlim()
+            view_txt = (f"Zoom {getattr(self, '_zoom_factor', 0.8):.2f}x | "
+                        f"view {xl[1]-xl[0]:.1f}x{yl[1]-yl[0]:.1f}m")
+        except Exception:
+            view_txt = f"Zoom {getattr(self, '_zoom_factor', 0.8):.2f}x"
+        if getattr(self, '_zoom_text', None) is None:
+            self._zoom_text = self.fig.text(
+                0.99, 0.98, view_txt, fontsize=10, color='white',
+                va='top', ha='right',
+                bbox=dict(facecolor='black', alpha=0.5, pad=3))
+        else:
+            self._zoom_text.set_text(view_txt)
 
         self.canvas.draw()
 
@@ -1368,7 +1374,7 @@ class FruitFlyRacer3D:
 
         # Adjust zoom factor (1.0 = default follow view)
         if not hasattr(self, '_zoom_factor'):
-            self._zoom_factor = 1.0
+            self._zoom_factor = 0.8
 
         # event.step is +1 (up) / -1 (down); fall back to button name for
         # backends that don't populate it
@@ -1452,7 +1458,7 @@ class FruitFlyRacer3D:
             self.spectator_mode = False
             self.spectator_var.set(False)
             self._user_moved_camera = False
-            self._zoom_factor = 1.0
+            self._zoom_factor = 0.8
             self._cam_offset = np.array([0.0, 0.0, 0.0])
             self._view_initialized = False
             self.log("=== CAMERA VIEW: CHASE CAM ===")
@@ -1505,7 +1511,7 @@ class FruitFlyRacer3D:
             self.log("Camera will now follow the fly")
             self.log("=============================")
             self._user_moved_camera = False
-            self._zoom_factor = 1.0
+            self._zoom_factor = 0.8
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
     def exit_spectator(self, event=None):
@@ -1584,7 +1590,7 @@ class FruitFlyRacer3D:
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
         # Camera move speed scales with zoom (closer = slower precise movement)
-        speed = 8.0 * getattr(self, '_zoom_factor', 1.0) * dt
+        speed = 8.0 * getattr(self, '_zoom_factor', 0.8) * dt
         move = np.zeros(3)
         for key in self._keys_down:
             move += self._MOVE_KEYS[key]
