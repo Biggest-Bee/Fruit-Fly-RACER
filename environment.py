@@ -61,10 +61,10 @@ class RacingEnvironment:
         randomly placed passable hole."""
         hole_y = hole_z = 0.0
         for _ in range(20):
-            # holes always spawn in the LOWER half of the tunnel
-            # (y < 0) so the fly rarely needs a steep climb to reach them
+            # holes spawn mostly in the lower half but can poke a
+            # little above the middle (y up to +2m)
             hole_y = random.uniform(-self.tunnel_radius * 0.6,
-                                     -self.tunnel_radius * 0.1)
+                                     self.tunnel_radius * 0.2)
             hole_z = random.uniform(-self.tunnel_radius * 0.6,
                                      self.tunnel_radius * 0.6)
             if math.hypot(hole_y, hole_z) <= self.tunnel_radius * 0.65:

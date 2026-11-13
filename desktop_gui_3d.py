@@ -595,8 +595,16 @@ class FruitFlyRacer3D:
                 # Bulkhead holes: direct guidance applied AFTER the blend
                 # so the fly seeks holes even when the brain drives.
                 # Only active while bulkheads are enabled.
+                # Assist power: both hole guidance and wall slowdown fade
+                # 1% per episode so the fly gradually learns on its own
+                assist_power = max(0.0, 1.0
+                                   - 0.01 * self.brain.episode_count)
+                self._bh_power = assist_power if self.bulkhead_var.get() else 0.0
+                self._slow_power = self._bh_power
+
                 if self.bulkhead_var.get():
-                    bh = self.environment.bulkhead_guidance(position)
+                    bh = (self.environment.bulkhead_guidance(position)
+                          * assist_power)
                 else:
                     bh = np.zeros(2)
                 lat_y += bh[0]
@@ -620,9 +628,10 @@ class FruitFlyRacer3D:
                                           position[2] - hz)
                         hole = bh_obs['hole_size']
                         if d_hole > hole:
-                            fwd_speed *= float(np.clip(
+                            s = float(np.clip(
                                 1.0 - (d_hole - hole) / (hole + 5.0),
                                 0.2, 1.0))
+                            fwd_speed *= 1.0 - (1.0 - s) * assist_power
 
                 desired_velocity = np.array([
                     fwd_speed,                         # forward along tunnel
@@ -772,6 +781,10 @@ class FruitFlyRacer3D:
                           self.environment.center_gain,
                           self.environment.avoid_margin),
                 'best_score': self.best_score,
+                # assist powers - derived from episode_count but stored
+                # explicitly so the fade schedule survives restarts
+                'bh_power': getattr(self, '_bh_power', 0.0),
+                'slow_power': getattr(self, '_slow_power', 0.0),
             })
         except Exception as e:
             self.log(f"Checkpoint save failed: {e}")
@@ -1352,9 +1365,11 @@ class FruitFlyRacer3D:
         else:
             self._coord_text.set_text(hud)
 
-        # Hole guidance power readout under the coords
-        bh_power = 100 if self.bulkhead_var.get() else 0
-        bh_txt = f"Hole Guide: {bh_power}%"
+        # Assist power readouts under the coords - both fade 1%/episode
+        bp = getattr(self, '_bh_power', 0.0)
+        sp = getattr(self, '_slow_power', 0.0)
+        bh_txt = (f"Hole Guide: {bp*100:.0f}%   "
+                  f"Slow-Assist: {sp*100:.0f}%")
         if getattr(self, '_bh_text', None) is None:
             self._bh_text = self.fig.text(
                 0.01, 0.93, bh_txt, fontsize=10, color='yellow',
