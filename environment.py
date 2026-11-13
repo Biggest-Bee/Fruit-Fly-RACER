@@ -554,6 +554,20 @@ class RacingEnvironment:
                 best = (obs, dx)
         return best if best else (None, None)
 
+    def in_hole_cone(self, position: np.ndarray,
+                     lookahead: float = 18.0):
+        """True if the fly is inside the approach cone of the nearest
+        bulkhead hole - the flared region in front of the hole where it
+        can easily fly in. Cone radius grows from hole_size at the wall
+        to hole_size + ~2.7m at max range."""
+        obs, dx = self.nearest_bulkhead(position, lookahead)
+        if obs is None:
+            return False
+        hy, hz = obs['position'][1], obs['position'][2]
+        d_hole = math.hypot(position[1] - hy, position[2] - hz)
+        cone_r = obs['hole_size'] + dx * 0.15
+        return d_hole <= cone_r
+
     def bulkhead_guidance(self, position: np.ndarray,
                           lookahead: float = 25.0):
         """

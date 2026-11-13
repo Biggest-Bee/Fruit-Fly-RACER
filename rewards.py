@@ -22,6 +22,7 @@ class RewardSystem:
         self.bulkhead_penalty = -100.0  # smacking into a bulkhead wall
         self.crash_penalty = -200.0   # ground strike (usually after a stall)
         self.hole_bonus = 100.0       # threaded a bulkhead hole
+        self.slow_bonus = 0.5         # per-step: slowed near bulkhead, off-cone
         self.progress_reward_multiplier = 100.0
         
         self.collision_count = 0
@@ -79,6 +80,13 @@ class RewardSystem:
             Penalty value
         """
         return self.bulkhead_penalty
+
+    def calculate_slow_bonus(self) -> float:
+        """
+        Small per-step bonus for slowing down near a bulkhead while
+        outside the hole cone - rewards lining up instead of ramming
+        """
+        return self.slow_bonus
 
     def calculate_hole_bonus(self) -> float:
         """

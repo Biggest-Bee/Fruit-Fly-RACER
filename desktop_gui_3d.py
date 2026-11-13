@@ -607,7 +607,9 @@ class FruitFlyRacer3D:
 
                 # Wall approach: if a bulkhead is close ahead and the fly
                 # isn't lined up on the hole, bleed forward speed so it
-                # can actually turn - ramming the wall earns nothing
+                # can actually turn - ramming the wall earns nothing.
+                # The slowdown fades 1%/episode so the fly gradually
+                # learns to shed speed on its own.
                 fwd_speed = self.environment.max_speed * 0.8
                 if self.bulkhead_var.get():
                     bh_obs, bh_dx = self.environment.nearest_bulkhead(position)
@@ -617,10 +619,12 @@ class FruitFlyRacer3D:
                                           position[2] - hz)
                         hole = bh_obs['hole_size']
                         if d_hole > hole:
-                            # slow down the further off-line we are
-                            fwd_speed *= float(np.clip(
+                            s = float(np.clip(
                                 1.0 - (d_hole - hole) / (hole + 5.0),
                                 0.2, 1.0))
+                            fade = max(0.0, 1.0
+                                       - 0.01 * self.brain.episode_count)
+                            fwd_speed *= 1.0 - (1.0 - s) * fade
 
                 desired_velocity = np.array([
                     fwd_speed,                         # forward along tunnel
@@ -696,6 +700,19 @@ class FruitFlyRacer3D:
                         self.rewards.update_total_points(reward=bonus)
                         self.log(f"HOLE! +{bonus:.0f} "
                                  f"({len(self._bh_passed)} this episode)")
+
+                # Slowdown reward: near a bulkhead but outside the hole
+                # cone, going slow is the RIGHT move - reward it so the
+                # fly learns to line up instead of ramming the wall
+                if self.bulkhead_var.get():
+                    spd = np.linalg.norm(velocity[:3])
+                    if (spd < 2.5
+                            and not self.environment.in_hole_cone(position)):
+                        _, bh_dx2 = self.environment.nearest_bulkhead(
+                            position, 18.0)
+                        if bh_dx2 is not None:
+                            self.rewards.update_total_points(
+                                reward=self.rewards.calculate_slow_bonus())
 
                 # Check progress
                 progress = self.environment.get_progress_to_finish(position)
