@@ -623,7 +623,11 @@ class FruitFlyRacer3D:
                 if hit is not None:
                     self.fly_model._set_position(new_pos)
                     position = new_pos
-                    penalty = self.rewards.calculate_collision_penalty()
+                    if hit.get('type') == 'bulkhead':
+                        penalty = self.rewards.calculate_bulkhead_penalty()
+                        self.log(f"BULKHEAD HIT! Penalty {penalty:.0f}")
+                    else:
+                        penalty = self.rewards.calculate_collision_penalty()
                     self.rewards.update_total_points(penalty=penalty)
                     # Collision response: bleed speed but KEEP moving
                     # forward - a backward bounce could trap the fly
