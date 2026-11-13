@@ -337,12 +337,12 @@ class MuJoCoFlyModel:
             aoa = np.clip(cmd_pitch - path_pitch, -0.7, 0.7)
             self._fly_aoa = getattr(self, '_fly_aoa', 0.0)
             self._fly_aoa += (aoa - self._fly_aoa) * 0.15
-            lift = 2.5 * fwd * np.sin(self._fly_aoa)   # m/s^2 upward
+            lift = 1.5 * fwd * np.sin(self._fly_aoa)   # m/s^2 upward
 
             # Stall: lift collapses when the wing is over-angled, the fly
             # is too slow, the flight path is excessively nose-high, or a
             # steep bank at low speed overloads the wing
-            stalled = ((abs(self._fly_aoa) > 0.6)
+            stalled = ((abs(self._fly_aoa) > 0.5)
                        or (fwd < 1.5)
                        or (abs(path_pitch) > 0.6 and fwd < 3.0)
                        or (abs(self._fly_bank) > 0.9 and fwd < 2.5))
@@ -362,7 +362,7 @@ class MuJoCoFlyModel:
             # Stalled controls are mushy: the fly can't hold a climb -
             # cap upward velocity so it mushes over and drops
             if self._fly_stalled:
-                self._fly_vel[1] = min(self._fly_vel[1], 2.0)
+                self._fly_vel[1] = min(self._fly_vel[1], 1.0)
 
             # Induced drag: turning, tilting, and banking all increase
             # drag and bleed forward speed (load factor ~ n^2 like a
