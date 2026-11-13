@@ -56,6 +56,27 @@ class RacingEnvironment:
         
         print(f"Racing Environment initialized: {tunnel_length}m tunnel, {tunnel_radius}m radius")
 
+    def _make_bulkhead(self, x):
+        """Build a bulkhead wall obstacle at tunnel position x with a
+        randomly placed passable hole."""
+        hole_y = hole_z = 0.0
+        for _ in range(20):
+            hole_y = random.uniform(-self.tunnel_radius * 0.6,
+                                     self.tunnel_radius * 0.6)
+            hole_z = random.uniform(-self.tunnel_radius * 0.6,
+                                     self.tunnel_radius * 0.6)
+            if math.hypot(hole_y, hole_z) <= self.tunnel_radius * 0.65:
+                break
+        return {
+            'type': 'bulkhead',
+            'position': np.array([x, hole_y, hole_z]),
+            'size': 0.8,                    # wall half-thickness
+            'rotation': 0.0,
+            'has_hole': False,
+            'hole_size': random.uniform(0.5, 1.0),  # hole radius
+            'wall_mounted': False
+        }
+
     def set_bulkheads(self, enabled: bool):
         """Toggle bulkhead wall obstacles (and hole-seeking) on/off.
         Takes effect on the next course generation."""
@@ -176,26 +197,14 @@ class RacingEnvironment:
                     size = random.uniform(2.5, min(5.0, self.tunnel_radius * 0.5))
 
                     # Bulkhead: a wall spanning the whole cross-section with
-                    # a hole - position[1:] is the hole center in Y-Z
+                    # a hole - position[1:] is the hole center in Y-Z.
+                    # Max ONE bulkhead per course.
                     if obs_type == 'bulkhead':
-                        hole_y = hole_z = 0.0
-                        for _ in range(20):
-                            hole_y = random.uniform(-self.tunnel_radius * 0.6,
-                                                     self.tunnel_radius * 0.6)
-                            hole_z = random.uniform(-self.tunnel_radius * 0.6,
-                                                     self.tunnel_radius * 0.6)
-                            if math.hypot(hole_y, hole_z) <= self.tunnel_radius * 0.65:
-                                break
-                        obstacle = {
-                            'type': 'bulkhead',
-                            'position': np.array([z_pos, hole_y, hole_z]),
-                            'size': 0.8,                    # wall half-thickness
-                            'rotation': 0.0,
-                            'has_hole': False,
-                            'hole_size': random.uniform(0.5, 1.0),  # hole radius - fly can thread it
-                            'wall_mounted': False
-                        }
-                        self.obstacles.append(obstacle)
+                        if any(o.get('type') == 'bulkhead'
+                               for o in self.obstacles):
+                            continue
+                        self.obstacles.append(
+                            self._make_bulkhead(z_pos))
                         continue
 
                     # Decide hole first: holed obstacles are biased toward
@@ -250,6 +259,14 @@ class RacingEnvironment:
             errors.append(f"Critical error in generate_obstacles: {e}")
             import traceback
             errors.append(traceback.format_exc())
+
+        # Guarantee exactly one bulkhead when enabled - random.choice
+        # can theoretically miss it (~1% chance over 30 obstacles)
+        if self.bulkheads_enabled and not any(
+                o.get('type') == 'bulkhead' for o in self.obstacles):
+            bx = random.uniform(-self.tunnel_length/2 + 10,
+                                self.tunnel_length/2 - 20)
+            self.obstacles.append(self._make_bulkhead(bx))
 
         # Count obstacles with holes
         hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
