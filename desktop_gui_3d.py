@@ -605,10 +605,16 @@ class FruitFlyRacer3D:
                 lat_y += bh[0]
                 lat_z += bh[1]
 
+                # Throttle: speed follows maneuvering demand - full pace
+                # on clear straights, scrubbed when it needs to turn or
+                # climb. Lat commands are clipped to +-4 so demand 1.0 =
+                # max lateral authority.
+                turn_demand = min(1.0, max(abs(lat_y), abs(lat_z)) / 4.0)
+                fwd_speed = self.environment.max_speed * (0.9 - 0.5 * turn_demand)
+
                 # Wall approach: if a bulkhead is close ahead and the fly
                 # isn't lined up on the hole, bleed forward speed so it
                 # can actually turn - ramming the wall earns nothing
-                fwd_speed = self.environment.max_speed * 0.8
                 if self.bulkhead_var.get():
                     bh_obs, bh_dx = self.environment.nearest_bulkhead(position)
                     if bh_obs is not None and bh_dx < 18.0:
