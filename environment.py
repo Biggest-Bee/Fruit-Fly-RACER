@@ -540,6 +540,20 @@ class RacingEnvironment:
             steer[1:] *= max_steer / lat_norm
         return steer
 
+    def nearest_bulkhead(self, position: np.ndarray,
+                         lookahead: float = 25.0):
+        """Return (obs, dx) of the nearest bulkhead ahead, or (None, None)."""
+        x = position[0]
+        best = None
+        for obs in self.obstacles:
+            if obs.get('type') != 'bulkhead':
+                continue
+            dx = obs['position'][0] - x
+            if 0.0 < dx <= lookahead and \
+                    (best is None or dx < best[1]):
+                best = (obs, dx)
+        return best if best else (None, None)
+
     def bulkhead_guidance(self, position: np.ndarray,
                           lookahead: float = 25.0):
         """

@@ -112,7 +112,7 @@ class FruitFlyRacer3D:
 
         # Camera control state
         self._user_moved_camera = False
-        self._zoom_factor = 0.8
+        self._zoom_factor = 1.4
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         self._view_initialized = False
         self._keys_down = set()
@@ -307,7 +307,7 @@ class FruitFlyRacer3D:
         self.best_progress = 0.0
 
         # Keep the user's selected camera mode - don't force chase cam
-        self._zoom_factor = 0.8
+        self._zoom_factor = 1.4
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         
         self.start_btn.config(state=tk.DISABLED)
@@ -605,8 +605,25 @@ class FruitFlyRacer3D:
                 lat_y += bh[0]
                 lat_z += bh[1]
 
+                # Wall approach: if a bulkhead is close ahead and the fly
+                # isn't lined up on the hole, bleed forward speed so it
+                # can actually turn - ramming the wall earns nothing
+                fwd_speed = self.environment.max_speed * 0.8
+                if self.bulkhead_var.get():
+                    bh_obs, bh_dx = self.environment.nearest_bulkhead(position)
+                    if bh_obs is not None and bh_dx < 18.0:
+                        hy, hz = bh_obs['position'][1], bh_obs['position'][2]
+                        d_hole = np.hypot(position[1] - hy,
+                                          position[2] - hz)
+                        hole = bh_obs['hole_size']
+                        if d_hole > hole:
+                            # slow down the further off-line we are
+                            fwd_speed *= float(np.clip(
+                                1.0 - (d_hole - hole) / (hole + 5.0),
+                                0.2, 1.0))
+
                 desired_velocity = np.array([
-                    self.environment.max_speed * 0.8,   # forward along tunnel
+                    fwd_speed,                         # forward along tunnel
                     np.clip(lat_y, -4.0, 4.0),
                     np.clip(lat_z, -4.0, 4.0)
                 ])
@@ -1248,7 +1265,7 @@ class FruitFlyRacer3D:
 
         user_control = self.spectator_mode or self.simulation_paused or getattr(self, '_user_moved_camera', False)
         camera_view = getattr(self, 'camera_view', 'chase')
-        zoom = getattr(self, '_zoom_factor', 0.8)
+        zoom = getattr(self, '_zoom_factor', 1.4)
 
         if camera_view == 'flypov' and not self.spectator_mode:
             # Fly POV: first-person view from the fly looking down the tunnel (+x)
@@ -1323,10 +1340,10 @@ class FruitFlyRacer3D:
         # Zoom readout, top-right: factor + actual view window size
         try:
             xl = self.ax.get_xlim(); yl = self.ax.get_ylim(); zl = self.ax.get_zlim()
-            view_txt = (f"Zoom {getattr(self, '_zoom_factor', 0.8):.2f}x | "
+            view_txt = (f"Zoom {getattr(self, '_zoom_factor', 1.4):.2f}x | "
                         f"view {xl[1]-xl[0]:.1f}x{yl[1]-yl[0]:.1f}m")
         except Exception:
-            view_txt = f"Zoom {getattr(self, '_zoom_factor', 0.8):.2f}x"
+            view_txt = f"Zoom {getattr(self, '_zoom_factor', 1.4):.2f}x"
         if getattr(self, '_zoom_text', None) is None:
             self._zoom_text = self.fig.text(
                 0.99, 0.98, view_txt, fontsize=10, color='white',
@@ -1388,7 +1405,7 @@ class FruitFlyRacer3D:
 
         # Adjust zoom factor (1.0 = default follow view)
         if not hasattr(self, '_zoom_factor'):
-            self._zoom_factor = 0.8
+            self._zoom_factor = 1.4
 
         # event.step is +1 (up) / -1 (down); fall back to button name for
         # backends that don't populate it
@@ -1472,7 +1489,7 @@ class FruitFlyRacer3D:
             self.spectator_mode = False
             self.spectator_var.set(False)
             self._user_moved_camera = False
-            self._zoom_factor = 0.8
+            self._zoom_factor = 1.4
             self._cam_offset = np.array([0.0, 0.0, 0.0])
             self._view_initialized = False
             self.log("=== CAMERA VIEW: CHASE CAM ===")
@@ -1525,7 +1542,7 @@ class FruitFlyRacer3D:
             self.log("Camera will now follow the fly")
             self.log("=============================")
             self._user_moved_camera = False
-            self._zoom_factor = 0.8
+            self._zoom_factor = 1.4
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
     def toggle_bulkheads(self):
@@ -1613,7 +1630,7 @@ class FruitFlyRacer3D:
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
         # Camera move speed scales with zoom (closer = slower precise movement)
-        speed = 8.0 * getattr(self, '_zoom_factor', 0.8) * dt
+        speed = 8.0 * getattr(self, '_zoom_factor', 1.4) * dt
         move = np.zeros(3)
         for key in self._keys_down:
             move += self._MOVE_KEYS[key]
