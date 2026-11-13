@@ -99,11 +99,20 @@ class FruitFlyRacer3D:
                 self._total_episodes = ckpt.get('total_episodes', 0)
                 self._bh_power = ckpt.get('bh_power', 0.0)
                 self._slow_power = ckpt.get('slow_power', 0.0)
-                self._assist_override = ckpt.get('assist_override')
-                if (self._assist_override is not None
-                        and hasattr(self, 'assist_var')):
-                    self.assist_var.set(
-                        f"{self._assist_override * 100:.0f}")
+                self._guide_override = ckpt.get('guide_override')
+                self._slow_override = ckpt.get('slow_override')
+                # backward compat: old single 'assist_override' applied to both
+                if self._guide_override is None and self._slow_override is None:
+                    legacy = ckpt.get('assist_override')
+                    if legacy is not None:
+                        self._guide_override = legacy
+                        self._slow_override = legacy
+                for kind, varname in (('guide', 'guide_var'),
+                                      ('slow', 'slow_var')):
+                    ov = (self._guide_override if kind == 'guide'
+                          else self._slow_override)
+                    if ov is not None and hasattr(self, varname):
+                        getattr(self, varname).set(f"{ov * 100:.0f}")
                 print(f"Restored stats: best={self.best_score:.1f}, "
                       f"progress={self.best_progress*100:.1f}%, "
                       f"episodes={self._total_episodes}")
@@ -133,7 +142,8 @@ class FruitFlyRacer3D:
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         self._view_initialized = False
         self._keys_down = set()
-        self._assist_override = None   # None = auto 1%/episode fade
+        self._guide_override = None  # None = auto 1%/episode fade
+        self._slow_override = None
 
         # Best time tracking
         self.best_time = float('inf')
@@ -226,17 +236,20 @@ class FruitFlyRacer3D:
                         variable=self.bulkhead_var,
                         command=self.toggle_bulkheads).pack(fill=tk.X, pady=5)
 
-        # Manual assist power override (blank = auto 1%/episode fade)
-        ttk.Label(left_frame, text="Assist Power % (blank=auto):",
-                  ).pack(anchor=tk.W, pady=(5, 0))
-        assist_row = ttk.Frame(left_frame)
-        assist_row.pack(fill=tk.X, pady=2)
-        self.assist_var = tk.StringVar(value="")
-        ttk.Entry(assist_row, textvariable=self.assist_var,
-                  width=8).pack(side=tk.LEFT)
-        ttk.Button(assist_row, text="Set", width=5,
-                   command=self.set_assist_power).pack(side=tk.LEFT,
-                                                     padx=(4, 0))
+        # Manual assist power overrides - separate for hole guide and
+        # slow-assist (blank = auto 1%/episode fade)
+        for label, attr, cmd in (
+                ("Hole Guide % (blank=auto):", 'guide_var', 'guide'),
+                ("Slow Assist % (blank=auto):", 'slow_var', 'slow')):
+            ttk.Label(left_frame, text=label).pack(anchor=tk.W, pady=(5, 0))
+            row = ttk.Frame(left_frame)
+            row.pack(fill=tk.X, pady=2)
+            var = tk.StringVar(value="")
+            setattr(self, attr, var)
+            ttk.Entry(row, textvariable=var, width=8).pack(side=tk.LEFT)
+            ttk.Button(row, text="Set", width=5,
+                       command=lambda k=cmd: self.set_assist_power(k)
+                       ).pack(side=tk.LEFT, padx=(4, 0))
 
         # Camera controls hint
         ttk.Label(left_frame, text="Camera: drag=rotate, wheel=zoom, WASD=move", 
@@ -634,19 +647,19 @@ class FruitFlyRacer3D:
                 # Bulkhead holes: direct guidance applied AFTER the blend
                 # so the fly seeks holes even when the brain drives.
                 # Only active while bulkheads are enabled.
-                # Assist power: manual override wins, otherwise both
-                # assists fade 1% per episode so the fly learns on its own
-                if self._assist_override is not None:
-                    assist_power = self._assist_override
-                else:
-                    assist_power = max(0.0, 1.0
-                                       - 0.01 * self.brain.episode_count)
-                self._bh_power = assist_power if self.bulkhead_var.get() else 0.0
-                self._slow_power = self._bh_power
+                # Assist powers: manual overrides win, otherwise each
+                # fades 1% per episode so the fly learns on its own
+                fade = max(0.0, 1.0 - 0.01 * self.brain.episode_count)
+                guide_power = (self._guide_override
+                               if self._guide_override is not None else fade)
+                slow_power = (self._slow_override
+                              if self._slow_override is not None else fade)
+                self._bh_power = guide_power
+                self._slow_power = slow_power
 
                 if self.bulkhead_var.get():
                     bh = (self.environment.bulkhead_guidance(position)
-                          * assist_power)
+                          * guide_power)
                 else:
                     bh = np.zeros(2)
                 lat_y += bh[0]
@@ -673,7 +686,7 @@ class FruitFlyRacer3D:
                             s = float(np.clip(
                                 1.0 - (d_hole - hole) / (hole + 5.0),
                                 0.2, 1.0))
-                            fwd_speed *= 1.0 - (1.0 - s) * assist_power
+                            fwd_speed *= 1.0 - (1.0 - s) * slow_power
 
                 desired_velocity = np.array([
                     fwd_speed,                         # forward along tunnel
@@ -848,7 +861,8 @@ class FruitFlyRacer3D:
                 # explicitly so the fade schedule survives restarts
                 'bh_power': getattr(self, '_bh_power', 0.0),
                 'slow_power': getattr(self, '_slow_power', 0.0),
-                'assist_override': self._assist_override,
+                'guide_override': self._guide_override,
+                'slow_override': self._slow_override,
             })
         except Exception as e:
             self.log(f"Checkpoint save failed: {e}")
@@ -1650,22 +1664,24 @@ class FruitFlyRacer3D:
             self._zoom_factor = 1.4
             self._cam_offset = np.array([0.0, 0.0, 0.0])
 
-    def set_assist_power(self):
-        """Set manual assist power % for hole guide + slow-assist.
-        Empty/'auto' restores the 1%/episode fade."""
-        txt = self.assist_var.get().strip().lower()
+    def set_assist_power(self, kind):
+        """Set manual assist power % for 'guide' or 'slow'.
+        Empty/'auto' restores that assist's 1%/episode fade."""
+        var = self.guide_var if kind == 'guide' else self.slow_var
+        attr = '_guide_override' if kind == 'guide' else '_slow_override'
+        name = 'hole guide' if kind == 'guide' else 'slow-assist'
+        txt = var.get().strip().lower()
         if txt in ('', 'auto'):
-            self._assist_override = None
-            self.log("Assist power: AUTO (1%/episode fade)")
+            setattr(self, attr, None)
+            self.log(f"{name} power: AUTO (1%/episode fade)")
             return
         try:
             pct = float(txt)
         except ValueError:
-            self.log("Assist power: invalid number - use 0-100 or 'auto'")
+            self.log(f"{name} power: invalid number - use 0-100 or 'auto'")
             return
-        self._assist_override = float(np.clip(pct, 0.0, 100.0)) / 100.0
-        self.log(f"Assist power set to {pct:.0f}% "
-                 f"(hole guide + slow-assist)")
+        setattr(self, attr, float(np.clip(pct, 0.0, 100.0)) / 100.0)
+        self.log(f"{name} power set to {pct:.0f}%")
 
     def toggle_bulkheads(self):
         """Enable/disable bulkhead walls + hole-seeker helper.
