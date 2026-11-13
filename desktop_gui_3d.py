@@ -380,7 +380,7 @@ class FruitFlyRacer3D:
             # Generate obstacles with error handling
             self.log("Generating obstacles...")
             try:
-                obstacles = self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                obstacles = self.environment.generate_obstacles(num_obstacles=30, with_holes=True)
                 self.log(f"Successfully generated {len(obstacles)} obstacles")
 
                 # Validate obstacles
@@ -482,7 +482,7 @@ class FruitFlyRacer3D:
                 # generated for the next race
                 if result.get('finish_reached', False):
                     try:
-                        self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                        self.environment.generate_obstacles(num_obstacles=30, with_holes=True)
                         self.update_mujoco_scene()
                         self.log(f"New course: {len(self.environment.obstacles)} obstacles generated")
                     except Exception as e:
@@ -491,7 +491,7 @@ class FruitFlyRacer3D:
                 # Regenerate obstacles periodically too (only log occasionally)
                 if episode_count % 10 == 1 and not result.get('finish_reached', False):
                     try:
-                        self.environment.generate_obstacles(num_obstacles=20, with_holes=True)
+                        self.environment.generate_obstacles(num_obstacles=30, with_holes=True)
                         self.update_mujoco_scene()
                         # Log obstacle generation
                         hole_count = sum(1 for obs in self.environment.obstacles if obs.get('has_hole', False))

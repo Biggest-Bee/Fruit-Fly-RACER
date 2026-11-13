@@ -39,7 +39,7 @@ class RacingEnvironment:
         self.obstacles = []
         # Obstacle types - 3D shapes: squares=cube, triangles=pyramid/tetrahedron,
         # circles=sphere, rectangles=box
-        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron', 'bulkhead']
+        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron']
         
         # Physics limits
         self.current_speed = 0.0
@@ -240,33 +240,6 @@ class RacingEnvironment:
             errors.append(f"Critical error in generate_obstacles: {e}")
             import traceback
             errors.append(traceback.format_exc())
-
-        # Bulkhead pairs: ~35% of bulkheads get a second wall a few meters
-        # ahead/behind with a different hole position - double-gate sections
-        for obs in list(self.obstacles):
-            if obs.get('type') != 'bulkhead' or random.random() > 0.35:
-                continue
-            off = random.choice([-1.0, 1.0]) * random.uniform(4.0, 10.0)
-            nx = obs['position'][0] + off
-            if abs(nx) > self.tunnel_length / 2 - 15:
-                continue
-            hy = hz = 0.0
-            for _ in range(20):
-                hy = random.uniform(-self.tunnel_radius * 0.6,
-                                     self.tunnel_radius * 0.6)
-                hz = random.uniform(-self.tunnel_radius * 0.6,
-                                     self.tunnel_radius * 0.6)
-                if math.hypot(hy, hz) <= self.tunnel_radius * 0.65:
-                    break
-            self.obstacles.append({
-                'type': 'bulkhead',
-                'position': np.array([nx, hy, hz]),
-                'size': 0.8,
-                'rotation': 0.0,
-                'has_hole': False,
-                'hole_size': random.uniform(0.5, 1.0),
-                'wall_mounted': False
-            })
 
         # Count obstacles with holes
         hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
