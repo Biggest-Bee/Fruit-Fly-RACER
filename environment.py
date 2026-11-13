@@ -39,7 +39,7 @@ class RacingEnvironment:
         self.obstacles = []
         # Obstacle types - 3D shapes: squares=cube, triangles=pyramid/tetrahedron,
         # circles=sphere, rectangles=box
-        self.obstacle_types = ['cube', 'box', 'sphere', 'cylinder', 'pyramid', 'tetrahedron']
+        self.obstacle_types = ['cube', 'box', 'sphere', 'pyramid', 'tetrahedron']
         self.bulkheads_enabled = False
         
         # Physics limits
