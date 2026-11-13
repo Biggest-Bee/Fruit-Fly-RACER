@@ -15,7 +15,7 @@ class RacingEnvironment:
     3D racing tunnel environment with MuJoCo physics
     """
     
-    def __init__(self, tunnel_length: float = 200.0, tunnel_radius: float = 10.0):
+    def __init__(self, tunnel_length: float = 300.0, tunnel_radius: float = 10.0):
         """
         Initialize the racing environment
         
