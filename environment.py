@@ -268,6 +268,31 @@ class RacingEnvironment:
                                 self.tunnel_length/2 - 20)
             self.obstacles.append(self._make_bulkhead(bx))
 
+        # Keep the bulkhead hole approach cone clear: remove any obstacle
+        # sitting in the flared region in front of the hole so the hole
+        # seeker always has a clean line to the hole
+        bh = next((o for o in self.obstacles
+                   if o.get('type') == 'bulkhead'), None)
+        if bh is not None:
+            ox = bh['position'][0]
+            hy, hz = bh['position'][1], bh['position'][2]
+            hole = bh['hole_size']
+            kept = []
+            for obs in self.obstacles:
+                if obs.get('type') == 'bulkhead':
+                    kept.append(obs)
+                    continue
+                dx = ox - obs['position'][0]      # >0 = in front of wall
+                if 0.0 < dx <= 18.0:
+                    d_axis = math.hypot(obs['position'][1] - hy,
+                                        obs['position'][2] - hz)
+                    cone_r = hole + dx * 0.15 + \
+                        self.collision_radius(obs) * 0.5
+                    if d_axis < cone_r:
+                        continue                  # blocks the hole path
+                kept.append(obs)
+            self.obstacles = kept
+
         # Count obstacles with holes
         hole_count = sum(1 for obs in self.obstacles if obs['has_hole'])
 
@@ -594,7 +619,25 @@ class RacingEnvironment:
         d = math.hypot(dy, dz) + 1e-6
         # Strong pull when lined up on the hole, fading with distance
         w = max(0.0, min(1.0, (hole + 8.0 - d) / 8.0)) * 3.5
-        return np.array([dy / d * w, dz / d * w])
+        guide = np.array([dy / d * w, dz / d * w])
+
+        # Deflect around obstacles blocking the hole approach: any solid
+        # obstacle inside the cone corridor pushes the aim point sideways
+        for obs in self.obstacles:
+            if obs.get('type') == 'bulkhead':
+                continue
+            op = obs['position']
+            ddx = op[0] - x
+            if not (0.0 < ddx <= best[0]):
+                continue
+            # obstacle near the hole axis?
+            d_axis = math.hypot(op[1] - hy, op[2] - hz)
+            if d_axis < hole + 2.0:
+                # push aim away from the obstacle in the cross-section
+                ay, az = op[1] - y, op[2] - z
+                ad = math.hypot(ay, az) + 1e-6
+                guide += np.array([ay / ad, az / ad]) * 2.0
+        return guide
 
     def check_collision(self, position: np.ndarray) -> bool:
         """

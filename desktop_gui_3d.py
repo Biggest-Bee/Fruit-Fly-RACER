@@ -597,9 +597,6 @@ class FruitFlyRacer3D:
                 # Only active while bulkheads are enabled.
                 if self.bulkhead_var.get():
                     bh = self.environment.bulkhead_guidance(position)
-                    # Guidance fades 1% per episode so the fly learns
-                    # to navigate bulkheads on its own (~100 ep taper)
-                    bh *= max(0.0, 1.0 - 0.01 * self.brain.episode_count)
                 else:
                     bh = np.zeros(2)
                 lat_y += bh[0]
@@ -607,9 +604,7 @@ class FruitFlyRacer3D:
 
                 # Wall approach: if a bulkhead is close ahead and the fly
                 # isn't lined up on the hole, bleed forward speed so it
-                # can actually turn - ramming the wall earns nothing.
-                # The slowdown fades 1%/episode so the fly gradually
-                # learns to shed speed on its own.
+                # can actually turn - ramming the wall earns nothing
                 fwd_speed = self.environment.max_speed * 0.8
                 if self.bulkhead_var.get():
                     bh_obs, bh_dx = self.environment.nearest_bulkhead(position)
@@ -619,12 +614,9 @@ class FruitFlyRacer3D:
                                           position[2] - hz)
                         hole = bh_obs['hole_size']
                         if d_hole > hole:
-                            s = float(np.clip(
+                            fwd_speed *= float(np.clip(
                                 1.0 - (d_hole - hole) / (hole + 5.0),
                                 0.2, 1.0))
-                            fade = max(0.0, 1.0
-                                       - 0.01 * self.brain.episode_count)
-                            fwd_speed *= 1.0 - (1.0 - s) * fade
 
                 desired_velocity = np.array([
                     fwd_speed,                         # forward along tunnel
