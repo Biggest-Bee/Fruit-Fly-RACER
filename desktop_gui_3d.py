@@ -142,16 +142,19 @@ class FruitFlyRacer3D:
         self._cam_offset = np.array([0.0, 0.0, 0.0])
         self._view_initialized = False
         self._keys_down = set()
-        self._guide_override = None  # None = auto 1%/episode fade
-        self._slow_override = None
+        # don't clobber values restored from the checkpoint above
+        self._guide_override = getattr(self, '_guide_override', None)
+        self._slow_override = getattr(self, '_slow_override', None)
 
-        # Best time tracking
-        self.best_time = float('inf')
+        # Best time tracking (keep restored value if checkpoint had one)
+        self.best_time = getattr(self, 'best_time', float('inf'))
         self.current_episode_start = None
         
         # Create GUI
         self.create_menu()
         self.create_layout()
+        # Refresh status panel with any restored bests/stats
+        self.update_status()
         
         # Bind window close
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
